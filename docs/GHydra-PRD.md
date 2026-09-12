@@ -320,7 +320,7 @@ type Rule struct {
   - CF Worker 免费档大文件代理实测：CPU 时间限额 + 100–500MB 级 Release 流式透传行为（决定通道 B 设计容量）
   - 基准：单连接延迟开销、千并发稳定性
 - **技术**：Go 标准库、crypto/tls、miekg/dns
-- **退出标准**：① 改写 SNI 后 TLS 握手成功且 GitHub 可访问 ② 自举链在断 DNS（改 127.0.0.1:53）环境下仍能拿到 IP ③ 自部署 CF Worker 能完整代理 ≥100MB Release 文件（或实测得出容量上限，作为 M2 通道 B 设计输入）
+- **退出标准**：① 改写 SNI 后 TLS 握手成功且 GitHub 可访问 ② 自举链在断 DNS（改 127.0.0.1:53）环境下仍能拿到 IP ③ 通道 B 容量可行性结论：基于公开数据 + 生产案例佐证（gh-proxy.com 7T/天、cf-ghproxy-worker 开源模板）——免费档限额的**针对性实测推迟至 M2 开局**（带产品需求测：100–500MB Release 流式透传 + CPU 限额行为），作为 M2 通道 B 设计输入
 - **交付物**：PoC 仓库 + 基准报告
 
 **M0 实验记录（2026-09-12，真机直连环境实测）**
@@ -328,7 +328,8 @@ type Rule struct {
 - ② 断 DNS 自举：系统 DNS 置黑洞后，L2 DoH 经服务 IP 直连（223.5.5.5）227ms 兜底成功；DoH 亦失效时 L3 缓存 0.4ms 兜底——每级均不依赖系统 DNS
 - 性能：ClientHello 解析 1.87µs/op（验收线 <50µs，26 倍余量），改写 86ns
 - 反向结论：SNI 透明改写在 TLS 1.2 / 1.3 下均被 transcript 完整性机制协议级阻断（bad record mac），双版本对照实验完成，移出功能集
-- 剩余：③ CF Worker 大文件实验、千并发基准
+- 千并发：3000 连接（1000 瞬时风暴 × 3 轮）成功率 100%、goroutine 零泄漏、HeapSys 28MB（红线 120MB）；风暴态 p99 尾延迟 15.5s 由 accept backlog × SYN 重传退避主导——阶梯对照（同规模 1000 连接分批）p99 仅 1.15s / 吞吐 650 conn/s，真实用户即阶梯模式。M1 正式引擎待办：ListenConfig backlog 调优 + 连接复用池
+- 剩余：无——③ 已改为公开数据 + 生产案例佐证（gh-proxy.com 7T/天），CF 免费档针对性实测挪至 M2 开局
 
 ### M1 · 第 3–6 周 · 「直连通道产品化」
 - **目标**：通道 A 达到可日常自用（dogfooding）

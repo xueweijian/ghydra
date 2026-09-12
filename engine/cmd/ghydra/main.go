@@ -1,9 +1,10 @@
-// ghydra CLI — M0 PoC：SNI 转发器 + 自举链基准。
+// ghydra CLI — M0 PoC：SNI 转发器 + 自举链基准 + 并发压测。
 //
 // 用法:
 //
-//	ghydra bench [--json]          四级自举链探测，输出轨迹报告
-//	ghydra poc [--listen L] [--rewrite-sni NAME]   本地 SNI 转发器
+//	ghydra bench [--json]                    四级自举链探测，输出轨迹报告
+//	ghydra poc [--listen L] [--rewrite-sni N] [--upstream HOST:PORT]  本地 SNI 转发器
+//	ghydra loadtest [--concurrency N] [--rounds M]  千并发全链路压测
 //
 // M0 验证目标见 docs/GHydra-PRD.md §8 M0。M1 起将替换为 cobra 子命令结构。
 package main
@@ -11,13 +12,24 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net"
+	"net/http"
 	"os"
+	"runtime"
+	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -36,6 +48,8 @@ func main() {
 		benchCmd(os.Args[2:])
 	case "poc":
 		pocCmd(os.Args[2:])
+	case "loadtest":
+		loadtestCmd(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -49,8 +63,9 @@ func usage() {
 	fmt.Fprint(os.Stderr, `ghydra (M0 PoC)
 
 用法:
-  ghydra bench [--json]                     四级自举链探测报告
-  ghydra poc [--listen ADDR] [--rewrite-sni NAME]  本地 SNI 转发器
+  ghydra bench [--json]                                四级自举链探测报告
+  ghydra poc [--listen ADDR] [--rewrite-sni NAME] [--upstream HOST:PORT]  本地 SNI 转发器
+  ghydra loadtest [--concurrency N] [--rounds M]       并发压测（内置假上游 + 转发器 + 客户端）
 `)
 }
 
@@ -90,7 +105,8 @@ func benchCmd(args []string) {
 func pocCmd(args []string) {
 	fs := flag.NewFlagSet("poc", flag.ExitOnError)
 	listen := fs.String("listen", "127.0.0.1:8443", "本地监听地址")
-	rewrite := fs.String("rewrite-sni", "", "可选：把 ClientHello 的 SNI 改写为该值（domain fronting 实验）")
+	rewrite := fs.String("rewrite-sni", "", "实验工具：改写 ClientHello 的 SNI（TLS1.2/1.3 下会 bad record mac，仅协议研究用）")
+	upstream := fs.String("upstream", "", "可选：覆盖上游地址（HOST:PORT），默认按 SNI 域名拨 443")
 	dialTimeout := fs.Duration("dial-timeout", 5*time.Second, "上游连接超时")
 	_ = fs.Parse(args)
 
@@ -98,8 +114,13 @@ func pocCmd(args []string) {
 	if err != nil {
 		log.Fatalf("监听失败: %v", err)
 	}
+	log.Printf("GHydra PoC 转发器已启动: %s (rewrite-sni=%q upstream=%q)", *listen, *rewrite, *upstream)
+	forwardServer(ln, *rewrite, *upstream, *dialTimeout)
+}
+
+// forwardServer 是 poc 与 loadtest 共用的转发 accept 循环。
+func forwardServer(ln net.Listener, rewrite, upstream string, dialTimeout time.Duration) {
 	var conns int64
-	log.Printf("GHydra PoC 转发器已启动: %s (rewrite-sni=%q)", *listen, *rewrite)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -109,12 +130,12 @@ func pocCmd(args []string) {
 		id := atomic.AddInt64(&conns, 1)
 		go func(c net.Conn) {
 			defer c.Close()
-			relay(c, *rewrite, *dialTimeout, id)
+			relay(c, rewrite, upstream, dialTimeout, id)
 		}(conn)
 	}
 }
 
-func relay(conn net.Conn, rewrite string, dialTimeout time.Duration, id int64) {
+func relay(conn net.Conn, rewrite, upstream string, dialTimeout time.Duration, id int64) {
 	start := time.Now()
 	br := bufio.NewReader(conn)
 	ch, err := sni.ReadClientHello(br)
@@ -136,25 +157,206 @@ func relay(conn net.Conn, rewrite string, dialTimeout time.Duration, id int64) {
 		log.Printf("#%d 无 SNI，拒绝转发", id)
 		return
 	}
-	upstream, err := net.DialTimeout("tcp", net.JoinHostPort(host, "443"), dialTimeout)
+	addr := net.JoinHostPort(host, "443")
+	if upstream != "" {
+		addr = upstream
+	}
+	upstreamConn, err := net.DialTimeout("tcp", addr, dialTimeout)
 	if err != nil {
-		log.Printf("#%d %s 上游连接失败: %v", id, host, err)
+		log.Printf("#%d %s 上游连接失败: %v", id, addr, err)
 		return
 	}
-	defer upstream.Close()
-	if _, err := upstream.Write(out); err != nil {
-		log.Printf("#%d %s 写入上游失败: %v", id, host, err)
+	defer upstreamConn.Close()
+	if _, err := upstreamConn.Write(out); err != nil {
+		log.Printf("#%d %s 写入上游失败: %v", id, addr, err)
 		return
 	}
-	log.Printf("#%d SNI=%s -> %s (改写=%t)", id, ch.ServerName, upstream.RemoteAddr(), rewrite != "")
+	log.Printf("#%d SNI=%s -> %s (改写=%t)", id, ch.ServerName, upstreamConn.RemoteAddr(), rewrite != "")
 	go func() {
-		io.Copy(upstream, br)
-		if tc, ok := upstream.(*net.TCPConn); ok {
+		io.Copy(upstreamConn, br)
+		if tc, ok := upstreamConn.(*net.TCPConn); ok {
 			tc.CloseWrite()
 		} else {
-			upstream.Close()
+			upstreamConn.Close()
 		}
 	}()
-	n, _ := io.Copy(conn, upstream)
+	n, _ := io.Copy(conn, upstreamConn)
 	log.Printf("#%d 完成 %s 下行 %dB 耗时 %s", id, ch.ServerName, n, time.Since(start).Round(time.Millisecond))
+}
+
+// loadtestCmd 端到端并发压测：内置假上游 TLS 服务 + 转发器 + N×M 客户端。
+// 验收口径（PRD 非功能需求）：1000 并发连接、成功率 100%、无 goroutine 泄漏。
+func loadtestCmd(args []string) {
+	fs := flag.NewFlagSet("loadtest", flag.ExitOnError)
+	concurrency := fs.Int("concurrency", 1000, "并发 worker 数")
+	rounds := fs.Int("rounds", 3, "每 worker 建拆连接轮数")
+	deadline := fs.Duration("timeout", 15*time.Second, "单连接超时")
+	_ = fs.Parse(args)
+
+	// ① 假上游（自签 github.com 证书的 HTTPS 服务）
+	cert := genSelfSignedCert("github.com")
+	upLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	upSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, "OK")
+		}),
+		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+	}
+	defer upSrv.Close()
+	go upSrv.ServeTLS(upLn, "", "")
+
+	// ② 转发器（与 poc 完全同一条代码路径）
+	fwdLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	go forwardServer(fwdLn, "", upLn.Addr().String(), 5*time.Second)
+	time.Sleep(200 * time.Millisecond)
+
+	// ③ 客户端压测
+	pool := x509.NewCertPool()
+	pool.AddCert(cert.Leaf)
+	clientCfg := &tls.Config{ServerName: "github.com", RootCAs: pool}
+
+	baseGoroutines := runtime.NumGoroutine()
+	var peakGoroutines int64
+	var okCount, failCount int64
+	errKinds := sync.Map{}
+	latencies := make([]time.Duration, 0, *concurrency**rounds)
+	var mu sync.Mutex
+
+	log.SetOutput(io.Discard) // 压测期间静默 relay 日志
+	var wg sync.WaitGroup
+	start := time.Now()
+	for w := 0; w < *concurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < *rounds; i++ {
+				if n := runtime.NumGoroutine(); int64(n) > atomic.LoadInt64(&peakGoroutines) {
+					atomic.StoreInt64(&peakGoroutines, int64(n))
+				}
+				t0 := time.Now()
+				err := oneRound(fwdLn.Addr().String(), clientCfg, *deadline)
+				lat := time.Since(t0)
+				mu.Lock()
+				latencies = append(latencies, lat)
+				mu.Unlock()
+				if err != nil {
+					atomic.AddInt64(&failCount, 1)
+					kind := errKind(err)
+					errKinds.Store(kind, true)
+					continue
+				}
+				atomic.AddInt64(&okCount, 1)
+			}
+		}()
+	}
+	wg.Wait()
+	elapsed := time.Since(start)
+	log.SetOutput(os.Stderr)
+
+	// ④ 泄漏检测：连接全部关闭后 goroutine 应回落
+	time.Sleep(2 * time.Second)
+	finalGoroutines := runtime.NumGoroutine()
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+
+	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+	pct := func(p float64) time.Duration {
+		if len(latencies) == 0 {
+			return 0
+		}
+		idx := int(float64(len(latencies)-1) * p)
+		return latencies[idx]
+	}
+	total := *concurrency * *rounds
+	var kinds []string
+	errKinds.Range(func(k, _ any) bool {
+		kinds = append(kinds, k.(string))
+		return true
+	})
+
+	fmt.Printf("千并发压测报告\n")
+	fmt.Printf("  规模: %d 并发 × %d 轮 = %d 连接（建拆） 耗时 %s\n", *concurrency, *rounds, total, elapsed.Round(time.Millisecond))
+	fmt.Printf("  成功率: %d/%d (%.2f%%)\n", okCount, total, float64(okCount)/float64(total)*100)
+	if len(latencies) > 0 {
+		fmt.Printf("  延迟: p50 %s  p95 %s  p99 %s  max %s\n", pct(0.50).Round(time.Microsecond), pct(0.95).Round(time.Microsecond), pct(0.99).Round(time.Microsecond), latencies[len(latencies)-1].Round(time.Microsecond))
+	}
+	fmt.Printf("  吞吐: %.0f conn/s\n", float64(total)/elapsed.Seconds())
+	if failCount > 0 {
+		fmt.Printf("  失败: %d  种类: %v\n", failCount, kinds)
+	}
+	fmt.Printf("  goroutine: 基线 %d → 峰值 %d → 回落 %d %s\n", baseGoroutines, peakGoroutines, finalGoroutines, leakVerdict(baseGoroutines, finalGoroutines))
+	fmt.Printf("  内存: HeapAlloc %.1fMB / HeapSys %.1fMB\n", float64(ms.HeapAlloc)/1e6, float64(ms.HeapSys)/1e6)
+}
+
+// oneRound 完成一次：建连 → TLS 握手 → 请求 → 读完整响应 → 关闭。
+func oneRound(addr string, cfg *tls.Config, timeout time.Duration) error {
+	c, err := tls.Dial("tcp", addr, cfg)
+	if err != nil {
+		return fmt.Errorf("dial/tls: %w", err)
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(timeout))
+	req := "GET / HTTP/1.1\r\nHost: github.com\r\nConnection: close\r\n\r\n"
+	if _, err := io.WriteString(c, req); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+	body, err := io.ReadAll(c)
+	if err != nil {
+		return fmt.Errorf("read: %w", err)
+	}
+	if len(body) == 0 || !containsStatus200(body) {
+		return fmt.Errorf("bad response (%d bytes)", len(body))
+	}
+	return nil
+}
+
+func containsStatus200(head []byte) bool {
+	return len(head) >= 12 && string(head[:12]) == "HTTP/1.1 200"
+}
+
+func errKind(err error) string {
+	s := err.Error()
+	for _, prefix := range []string{"dial/tls", "write", "read"} {
+		if len(s) >= len(prefix) && s[:len(prefix)] == prefix {
+			return prefix
+		}
+	}
+	return "other"
+}
+
+func leakVerdict(base, final int) string {
+	if final <= base+8 {
+		return "✓ 无泄漏"
+	}
+	return "✗ 疑似泄漏"
+}
+
+func genSelfSignedCert(dnsName string) tls.Certificate {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: dnsName},
+		DNSNames:              []string{dnsName},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		log.Fatal(err)
+	}
+	c := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+	c.Leaf, _ = x509.ParseCertificate(der)
+	return c
 }

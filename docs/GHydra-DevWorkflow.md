@@ -81,6 +81,7 @@ docs/            # PRD / TechReference / 本约定 / evidence/
    - 2026-09-12 真机实测：透传六域名 6/6 存活；**透明改写双证伪**（TLS 1.3 ServerHello 密钥派生绑 transcript / TLS 1.2 Finished 校验绑 transcript → bad record mac），改写移出功能集，仅留实验工具
 2. ✅ 四级自举链原型：断 DNS（改 127.0.0.1:53）下仍能取到 IP
    - 2026-09-12 真机实测：L2 DoH 服务 IP 直连（223.5.5.5）227ms 兜底 / L3 缓存 0.4ms 兜底；DoH 端点必须配 IP（域名形式在断 DNS 下自锁，已修复）
-3. CF Worker 免费档大文件代理实测：CPU 时间限额 + 100–500MB Release 流式透传（通道 B 容量上限，M2 设计输入）
+3. 通道 B 容量（改判）：M0 口径 = 公开数据 + 生产案例佐证（gh-proxy.com 7T/日、cf-ghproxy-worker 模板）；免费档针对性实测挪至 M2 开局，带产品需求测更准
+4. ✅ 千并发（2026-09-12 沙箱实测）：3000 连接成功率 100%、goroutine 零泄漏、HeapSys 28MB；瞬时风暴 p99 尾延迟 = accept backlog × SYN 重传退避（阶梯对照 1.15s 佐证，非代码缺陷）→ M1 待办 ListenConfig backlog 调优 + 连接复用池
 
-三实验对应 PRD M0 退出标准 ①②③。
+三实验对应 PRD M0 退出标准 ①②③（③ 已改判为公开数据佐证口径）。
