@@ -3,6 +3,7 @@ package sched
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -446,23 +447,25 @@ func errDial() error          { return dialErr{} }
 func TestPreflightUsesDialHost(t *testing.T) {
 	sc, _ := newTestSched()
 	sc.AddCandidates("github.com", []string{"1.1.1.1:443", "2.2.2.2:443"})
-	var hostCalls, tcpCalls int
+	// 回调在 Preflight 的并发探测 goroutine 里执行：计数用原子，
+	// 断言用 Errorf（Fatalf 的 Goexit 不能跨 goroutine）
+	var hostCalls, tcpCalls atomic.Int32
 	sc.Dial = func(string, time.Duration) error {
-		tcpCalls++
+		tcpCalls.Add(1)
 		return nil
 	}
 	sc.DialHost = func(host, addr string, _ time.Duration) error {
 		if host != "github.com" || addr == "" {
-			t.Fatalf("DialHost 参数异常: %q %q", host, addr)
+			t.Errorf("DialHost 参数异常: %q %q", host, addr)
 		}
-		hostCalls++
+		hostCalls.Add(1)
 		return nil
 	}
 	if got := sc.Preflight("github.com"); got != 2 {
 		t.Fatalf("Preflight = %d", got)
 	}
-	if hostCalls != 2 || tcpCalls != 0 {
-		t.Fatalf("应优先使用 DialHost: host=%d tcp=%d", hostCalls, tcpCalls)
+	if hostCalls.Load() != 2 || tcpCalls.Load() != 0 {
+		t.Fatalf("应优先使用 DialHost: host=%d tcp=%d", hostCalls.Load(), tcpCalls.Load())
 	}
 }
 
