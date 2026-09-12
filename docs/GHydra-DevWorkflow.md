@@ -13,7 +13,7 @@
 
 ## 0. 四条铁律
 
-1. **CI 即开发环境**：本机只写代码（零依赖、零 Go 工具链、零模型下载）；一切构建 / 测试 / 发布走 GitHub Actions（公开仓库，免费不限时）。
+1. **分层验证（2026-09-12 修订）**：本机已装 Go 工具链（go1.23+，约 400MB，用户批准），承担**机械验证**——`gofmt -l` / `go vet` / `go test`（纯逻辑、不涉网，秒级反馈）；CI 承担**平台验证**——三平台 race 矩阵、交叉编译、基准记录、发布产物（公开仓库，免费不限时）。大依赖下载仍然禁止（docker / rust / node / 模型权重 / 大型 SDK）。
 2. **测试优先**：先写测试后写实现；没测试的代码 = 不存在；验收标准必须能被测试证据替代。
 3. **阶段串行**：上一里程碑退出标准未达成，不写下一阶段任何代码；禁止提前布局下阶段。
 4. **依赖白名单**：新增 Go 依赖必须先回 TechReference §3 登记理由，防止包体积膨胀（安装包 ≤15MB 红线）。
@@ -22,13 +22,14 @@
 
 | 环境 | 职责 | 能做 / 不能做 |
 |---|---|---|
-| 本机（沙箱） | 写代码、改文档、分析报告 | ✅ 写文件 / 分析日志；❌ go build、拉依赖、装工具链、下模型 |
-| GitHub Actions | lint → test → build → artifact → release | ❌ 测不了真实 GFW 行为（runner 在海外，访问 GitHub 全通） |
+| 本机（沙箱） | 写代码、机械验证（gofmt / vet / 纯逻辑单测，秒级）、改文档、分析报告 | ✅ go1.23+ 工具链（已装 ~400MB）；❌ 大依赖下载、docker / rust / node、模型权重 |
+| GitHub Actions | 平台验证：三平台 race 矩阵、交叉编译、基准、release | ❌ 测不了真实 GFW 行为（runner 在海外，访问 GitHub 全通） |
 | 用户真机（大陆网络） | 真实网络验收 | 跑 `ghydra bench --json`，输出结构化报告贴回分析 |
 
 ## 2. CI 流水线设计
 
 - **触发统一用 push**，不依赖 workflow_dispatch（历史教训：私有仓库 workflow 注册 0-jobs 怪癖；公开仓库无此问题，但仍统一 push 触发保持简单）
+- **CI Go 版本必须 ≥1.24**：macos-latest（macOS 26）的 dyld 拒绝执行无 LC_UUID 的 Go ≤1.23 race 二进制（golang/go#68678，1.24 起 linker 生成 LC_UUID）——踩坑记录 2026-09-12
 - **每次 push**：gofmt 检查 → `go vet` → 单元测试（ubuntu / windows / macos 三矩阵）→ 交叉编译（windows-amd64 / darwin-arm64 / darwin-amd64 / linux-amd64）→ 上传 artifact
 - **打 tag**：上述全过 → 生成 release（产物 + SHA256 校验和）
 - **每个 PR 必须全绿才可合并**（自己合并自己也走 PR，留下 CI 记录）
