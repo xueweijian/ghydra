@@ -17,9 +17,9 @@ import (
 // 解析与改写过程中的错误。调用方应将非 EOF 错误视为连接不可识别，
 // 原样直连或拒绝，绝不重试解析。
 var (
-	ErrNotHandshake    = errors.New("sni: first TLS record is not a handshake record")
-	ErrNotClientHello  = errors.New("sni: first handshake message is not a ClientHello")
-	ErrMalformed       = errors.New("sni: malformed ClientHello")
+	ErrNotHandshake   = errors.New("sni: first TLS record is not a handshake record")
+	ErrNotClientHello = errors.New("sni: first handshake message is not a ClientHello")
+	ErrMalformed      = errors.New("sni: malformed ClientHello")
 	ErrNoSNI           = errors.New("sni: ClientHello contains no server_name extension")
 	ErrRecordTooLarge  = errors.New("sni: TLS record length exceeds limit")
 	ErrInvalidSNIValue = errors.New("sni: invalid replacement SNI value")
@@ -108,7 +108,15 @@ func ReadClientHello(r *bufio.Reader) (*ClientHello, error) {
 				return nil, ErrRecordTooLarge
 			}
 		}
-		n := recLen
+		// 首个 record 的 payload 已被 handshake 头消费 4 字节
+		avail := recLen
+		if len(payload) == 4 {
+			avail = recLen - 4
+		}
+		if avail < 0 {
+			return nil, ErrMalformed
+		}
+		n := avail
 		if n > remaining {
 			n = remaining
 		}
@@ -147,9 +155,9 @@ func parse(record []byte) (*ClientHello, error) {
 	}
 
 	ch := &ClientHello{
-		Record:      record,
+		Record:       record,
 		offRecordLen: 3,
-		offHSLen:    6, // record 头 5 + handshake type 1
+		offHSLen:     6, // record 头 5 + handshake type 1
 	}
 	body := payload[4:]
 	if len(body) < 2+32+1 {
@@ -188,7 +196,7 @@ func parse(record []byte) (*ClientHello, error) {
 			return nil, ErrMalformed
 		}
 		if etype == extTypeServerName && !ch.HasSNI {
-			if err := ch.parseSNIExt(record, 9+off, eoff, exts[eoff+4:eoff+4+elen]); err != nil {
+			if err := ch.parseSNIExt(9+off, eoff, exts[eoff+4:eoff+4+elen]); err != nil {
 				return nil, err
 			}
 		}
@@ -199,7 +207,7 @@ func parse(record []byte) (*ClientHello, error) {
 
 // parseSNIExt 解析 server_name 扩展体，记录改写所需的全部偏移。
 // base 是 extensions 区在 record 内的绝对起点，eoff 是本扩展在其中的偏移。
-func (ch *ClientHello) parseSNIExt(record []byte, base, eoff int, edata []byte) error {
+func (ch *ClientHello) parseSNIExt(base, eoff int, edata []byte) error {
 	if len(edata) < 2 {
 		return ErrMalformed
 	}

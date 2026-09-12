@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -28,17 +29,17 @@ func loadFixture(t testing.TB, name string) []byte {
 // TestParseFixtures 验证各形态 ClientHello 的 SNI 提取。
 func TestParseFixtures(t *testing.T) {
 	cases := []struct {
-		file     string
-		wantSNI  string
-		wantHas  bool
-		wantVer  uint16
+		file    string
+		wantSNI string
+		wantHas bool
+		wantVer uint16
 	}{
 		{"ch_normal_tls13.hex", "github.com", true, 0x0303},
 		{"ch_tls12_sni.hex", "api.github.com", true, 0x0303},
 		{"ch_no_sni.hex", "", false, 0x0303},
 		{"ch_session_id.hex", "avatars.githubusercontent.com", true, 0x0303},
 		{"ch_multi_ext_sni_middle.hex", "objects.githubusercontent.com", true, 0x0303},
-		{"ch_long_sni.hex", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.githubusercontent.com", true, 0x0303},
+		{"ch_long_sni.hex", strings.Repeat("a", 200) + ".githubusercontent.com", true, 0x0303},
 	}
 	for _, c := range cases {
 		t.Run(c.file, func(t *testing.T) {

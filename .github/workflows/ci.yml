@@ -19,6 +19,8 @@ jobs:
           if [ -n "$out" ]; then
             echo "以下文件未通过 gofmt:"
             echo "$out"
+            echo "--- diff ---"
+            gofmt -d .
             exit 1
           fi
 

@@ -66,6 +66,13 @@ type Resolver struct {
 	TLSRoots     *x509.CertPool
 }
 
+// directClient 不走任何代理（含环境变量代理）——自举探测必须反映
+// 直连环境的真实可达性，用户的代理配置不应污染四级链的判断。
+var directClient = &http.Client{
+	Timeout:   15 * time.Second,
+	Transport: &http.Transport{},
+}
+
 // New 返回默认配置的解析器。
 func New() *Resolver {
 	seeds, err := DefaultSeeds()
@@ -74,7 +81,7 @@ func New() *Resolver {
 	}
 	home, _ := os.UserHomeDir()
 	return &Resolver{
-		HTTP:         &http.Client{Timeout: 15 * time.Second},
+		HTTP:         directClient,
 		MetaURL:      "https://api.github.com/meta",
 		DoHEndpoints: []string{"https://dns.alidns.com/resolve", "https://doh.pub/resolve"},
 		DoHName:      "github.com",
@@ -224,7 +231,7 @@ func (r *Resolver) fetchDoH(ctx context.Context, endpoint string) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	resp, err := r.HTTP.Do(req)
+	resp, err := directClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
