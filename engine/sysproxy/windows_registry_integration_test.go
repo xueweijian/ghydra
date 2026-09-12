@@ -102,13 +102,13 @@ func TestIntegrationPACTakeover(t *testing.T) {
 	orig := rawCurrent()
 	t.Cleanup(func() { restore(t, orig) })
 
-	// 接管前预置一个「手动代理 + bypass + WPAD」的复杂原值，
-	// 验证恢复不丢字段（W4.5 的核心回归点）
+	// 接管前预置一个「手动代理 + bypass」的复杂原值，验证恢复不丢
+	// 字段（W4.5 的核心回归点）。AutoDetect 不参与：GHydra 不管理
+	// WPAD（真值在 DefaultConnectionSettings blob，DWORD 写不进去）
 	pre := Setting{
 		ProxyServer:   "10.0.0.9:3128",
 		ProxyEnabled:  true,
 		ProxyOverride: "localhost;127.0.0.1;<local>",
-		AutoDetect:    true,
 	}
 	if err := Apply(pre); err != nil {
 		t.Fatalf("预置原值: %v", err)
@@ -131,9 +131,6 @@ func TestIntegrationPACTakeover(t *testing.T) {
 	if r.proxyEnable != 0 {
 		t.Errorf("PAC 模式 ProxyEnable 应为 0, got %d", r.proxyEnable)
 	}
-	if r.autoDetect&1 != 0 {
-		t.Errorf("PAC 模式 AutoDetect 应关闭（bit0=0）, got %d", r.autoDetect)
-	}
 	assertEq(t, "ProxyServer（值保留）", r.proxyServer, "10.0.0.9:3128")
 
 	// 恢复（ghydra off 的实际路径 = Apply(快照)）
@@ -145,9 +142,6 @@ func TestIntegrationPACTakeover(t *testing.T) {
 	assertEq(t, "恢复 ProxyOverride", r2.proxyOverride, "localhost;127.0.0.1;<local>")
 	if r2.proxyEnable != 1 {
 		t.Errorf("恢复 ProxyEnable 应为 1, got %d", r2.proxyEnable)
-	}
-	if r2.autoDetect&1 != 1 {
-		t.Errorf("恢复 AutoDetect 应启用（bit0=1）, got %d", r2.autoDetect)
 	}
 	if r2.autoConfigOK {
 		t.Errorf("恢复后 AutoConfigURL 应被删除, got %q", r2.autoConfigURL)
@@ -216,8 +210,8 @@ func TestIntegrationClearToZero(t *testing.T) {
 		t.Fatalf("Apply(零态): %v", err)
 	}
 	r := rawCurrent()
-	if r.proxyEnable != 0 || r.autoDetect&1 != 0 {
-		t.Errorf("零态应全关: ProxyEnable=%d AutoDetect=%d", r.proxyEnable, r.autoDetect)
+	if r.proxyEnable != 0 {
+		t.Errorf("零态应全关: ProxyEnable=%d", r.proxyEnable)
 	}
 	if r.autoConfigOK {
 		t.Errorf("零态应删 AutoConfigURL, got %q", r.autoConfigURL)

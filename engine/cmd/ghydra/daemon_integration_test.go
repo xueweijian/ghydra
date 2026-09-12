@@ -67,10 +67,18 @@ func rawCurrent() rawState {
 }
 
 func (a rawState) equal(b rawState) bool {
+	// AutoDetect 只比 bit0 且缺失视为 0：WinINet 刷新可能归一化该值
+	//（DWORD 是 blob 的 UI 镜像，GHydra 不管理它）
+	ad := func(r rawState) uint64 {
+		if !r.autoDetectOK {
+			return 0
+		}
+		return r.autoDetect & 1
+	}
 	return a.autoConfigURL == b.autoConfigURL && a.autoConfigOK == b.autoConfigOK &&
 		a.proxyServer == b.proxyServer && a.proxyServerOK == b.proxyServerOK &&
 		a.proxyOverride == b.proxyOverride && a.overrideOK == b.overrideOK &&
-		a.proxyEnable == b.proxyEnable && a.autoDetect&1 == b.autoDetect&1 && a.autoDetectOK == b.autoDetectOK
+		a.proxyEnable == b.proxyEnable && ad(a) == ad(b)
 }
 
 func restoreRaw(t *testing.T, orig rawState) {
@@ -179,8 +187,8 @@ func TestIntegrationOnOffLifecycle(t *testing.T) {
 		return rawCurrent().autoConfigURL == wantPAC
 	})
 	r := rawCurrent()
-	if r.proxyEnable != 0 || r.autoDetect&1 != 0 {
-		t.Errorf("接管态应关手动代理与 WPAD: ProxyEnable=%d AutoDetect=%d", r.proxyEnable, r.autoDetect)
+	if r.proxyEnable != 0 {
+		t.Errorf("接管态应关手动代理: ProxyEnable=%d", r.proxyEnable)
 	}
 	if d := readServeJSON(t, home); d == nil || d.Port != testPort {
 		t.Fatalf("serve.json 缺失或端口错: %+v", d)

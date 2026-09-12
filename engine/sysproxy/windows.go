@@ -83,13 +83,14 @@ func applyOS(s Setting) error {
 		return fmt.Errorf("删 ProxyOverride: %w", err)
 	}
 
-	// 启用位：PAC 接管时 ProxyEnable=0 避免与手动代理叠加；
-	// AutoDetect=0 避免 WPAD 抢答（PAC 与 WPAD 同时开时行为不可预期）。
+	// 启用位：PAC 接管时 ProxyEnable=0 避免与手动代理叠加。
+	// AutoDetect（WPAD）刻意不写：其真值在 Connections\
+	// DefaultConnectionSettings 二进制 blob，DWORD 只是 UI 镜像，
+	// SETTINGS_CHANGED 刷新时从 blob 重新派生——第三方写 1 会被
+	// 归零（windows-2022 runner 实测）。且 WinINet 解析序 AutoConfigURL
+	// 优先于 WPAD，共存无害；不碰它则 blob 恒为用户真值，恢复零成本。
 	if err := k.SetDWordValue("ProxyEnable", b2i(s.ProxyEnabled)); err != nil {
 		return fmt.Errorf("写 ProxyEnable: %w", err)
-	}
-	if err := k.SetDWordValue("AutoDetect", b2i(s.AutoDetect)); err != nil {
-		return fmt.Errorf("写 AutoDetect: %w", err)
 	}
 	return refreshWininet()
 }

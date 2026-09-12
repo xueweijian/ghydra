@@ -27,7 +27,8 @@ type Setting struct {
 	ProxyEnabled  bool   // 手动代理启用位（Windows ProxyEnable）
 	ProxyOverride string // bypass 列表，";" 分隔（Windows ProxyOverride / macOS bypass domains）
 	PACURL        string // PAC 自动配置 URL；空 = 未用
-	AutoDetect    bool   // WPAD 自动检测（Windows AutoDetect；mac/linux 无对应不落盘）
+	AutoDetect    bool   // WPAD（仅诊断快照用）：Windows 真值在 DefaultConnectionSettings
+	// blob，DWORD 写不进（WinINet 刷新会归零），Apply 刻意不写它
 }
 
 // IsZero 未设置任何代理。
