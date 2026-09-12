@@ -1,0 +1,7 @@
+dist/
+*.exe
+ghydra
+*.test
+*.out
+.idea/
+.vscode/

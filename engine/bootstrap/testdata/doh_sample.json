@@ -1,0 +1,15 @@
+{
+  "Status": 0,
+  "TC": false,
+  "RD": true,
+  "RA": true,
+  "AD": false,
+  "CD": false,
+  "Question": {"name": "github.com.", "type": 1},
+  "Answer": [
+    {"name": "github.com.", "type": 5, "TTL": 300, "data": "github.com."},
+    {"name": "github.com.", "type": 1, "TTL": 60, "data": "20.205.243.166"},
+    {"name": "github.com.", "type": 1, "TTL": 60, "data": "20.201.28.151"},
+    {"name": "github.com.", "type": 28, "TTL": 60, "data": "2606:50c0:8000::153"}
+  ]
+}
