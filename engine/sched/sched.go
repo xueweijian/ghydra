@@ -346,6 +346,18 @@ func (s *Scheduler) StickyIP(host string) string {
 	return d.sticky.addr
 }
 
+// Hosts 返回有池的域名列表（status 观察口）。
+func (s *Scheduler) Hosts() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.domains))
+	for h := range s.domains {
+		out = append(out, h)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // resolveAsync 池枯竭触发的候选补充（去重，单飞）。
 func (s *Scheduler) resolveAsync(host string) {
 	if s.Resolve == nil {

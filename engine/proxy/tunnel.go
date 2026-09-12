@@ -55,6 +55,9 @@ type Server struct {
 	OnEvent     func(Event)                      // 可选；事件回调（非阻塞约定见 Event）
 	DialTimeout time.Duration                    // 零值 = DefaultDialTimeout
 	Logf        func(format string, args ...any) // 可选调试日志
+	// HTTPHandler 可选：非 CONNECT 请求（GET /pac、/status）交给它——
+	// 同端口托管 PAC（R5），系统代理 AutoConfigURL 直指本端口。
+	HTTPHandler http.Handler
 
 	bufPool sync.Pool // []byte 32KB，双向转发复用（M0 千并发教训：buffer 池而非连接池）
 }
@@ -78,6 +81,13 @@ func (s *Server) handle(conn net.Conn) {
 		return // 畸形请求：直接断开（客户端拿 EOF 自会重试或报错）
 	}
 	if req.Method != http.MethodConnect {
+		if s.HTTPHandler != nil {
+			if req.Body != nil {
+				defer req.Body.Close()
+			}
+			s.HTTPHandler.ServeHTTP(&connResponseWriter{conn: conn}, req)
+			return
+		}
 		writePlain(conn, http.StatusBadRequest, "ghydra: 仅支持 CONNECT 隧道（GitHub 流量全 HTTPS）")
 		return
 	}

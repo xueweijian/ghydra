@@ -139,3 +139,37 @@ func TestQueueFullDoesNotBlock(t *testing.T) {
 		t.Fatal("写队列满时阻塞了热路径")
 	}
 }
+
+func TestSnapshotRoundtrip(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	if _, _, ok, _ := s.LoadSnapshot(); ok {
+		t.Fatal("初始应无快照")
+	}
+	if err := s.SaveSnapshot("192.168.1.1:8888", "http://old/pac"); err != nil {
+		t.Fatal(err)
+	}
+	ps, pac, ok, err := s.LoadSnapshot()
+	if err != nil || !ok {
+		t.Fatalf("快照读回: ok=%v err=%v", ok, err)
+	}
+	if ps != "192.168.1.1:8888" || pac != "http://old/pac" {
+		t.Fatalf("快照内容错: %q %q", ps, pac)
+	}
+	// 覆盖（同一 id 单行）
+	s.SaveSnapshot("", "")
+	ps2, pac2, ok2, _ := s.LoadSnapshot()
+	if !ok2 || ps2 != "" || pac2 != "" {
+		t.Fatalf("覆盖失败: %q %q %v", ps2, pac2, ok2)
+	}
+	if err := s.DeleteSnapshot(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok3, _ := s.LoadSnapshot(); ok3 {
+		t.Fatal("删除后应无快照")
+	}
+}

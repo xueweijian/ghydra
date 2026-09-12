@@ -77,6 +77,12 @@ CREATE TABLE IF NOT EXISTS probe_log (
   ok     INTEGER NOT NULL, rtt_ms REAL NOT NULL,
   source TEXT NOT NULL, ts INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sysproxy_snapshot (
+  id           INTEGER PRIMARY KEY CHECK (id = 1), -- 单行：接管前原值
+  proxy_server TEXT NOT NULL,
+  pac_url      TEXT NOT NULL,
+  taken_at     INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_probe_ts ON probe_log(ts);`); err != nil {
 		db.Close()
 		return nil, err
@@ -184,6 +190,37 @@ func (s *Store) LastGood() (map[string]LastGoodEntry, error) {
 		out[domain] = e
 	}
 	return out, rows.Err()
+}
+
+// --- 快照（sysproxy 接管前的原值，单行表；崩溃对账用） ---
+
+// SaveSnapshot 持久化接管前原值（同步，低频操作）。
+func (s *Store) SaveSnapshot(proxyServer, pacURL string) error {
+	_, err := s.db.Exec(`INSERT INTO sysproxy_snapshot(id, proxy_server, pac_url, taken_at)
+VALUES(1, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET proxy_server=excluded.proxy_server,
+  pac_url=excluded.pac_url, taken_at=excluded.taken_at`,
+		proxyServer, pacURL, time.Now().UnixMilli())
+	return err
+}
+
+// LoadSnapshot 读快照；不存在返回 ok=false。
+func (s *Store) LoadSnapshot() (proxyServer, pacURL string, ok bool, err error) {
+	err = s.db.QueryRow(`SELECT proxy_server, pac_url FROM sysproxy_snapshot WHERE id=1`).
+		Scan(&proxyServer, &pacURL)
+	if err == sql.ErrNoRows {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	return proxyServer, pacURL, true, nil
+}
+
+// DeleteSnapshot 删除快照（恢复完成后调用）。
+func (s *Store) DeleteSnapshot() error {
+	_, err := s.db.Exec(`DELETE FROM sysproxy_snapshot WHERE id=1`)
+	return err
 }
 
 // Close 停写并关库（在途数据 flush 后返回）。

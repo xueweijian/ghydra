@@ -31,6 +31,7 @@ import (
 	"os/signal"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -45,6 +46,7 @@ import (
 	"github.com/xueweijian/ghydra/engine/sched"
 	"github.com/xueweijian/ghydra/engine/sni"
 	"github.com/xueweijian/ghydra/engine/store"
+	"github.com/xueweijian/ghydra/engine/sysproxy"
 )
 
 func main() {
@@ -62,6 +64,10 @@ func main() {
 		loadtestCmd(os.Args[2:])
 	case "serve":
 		serveCmd(os.Args[2:])
+	case "on":
+		onCmd(os.Args[2:])
+	case "off":
+		offCmd(os.Args[2:])
 	case "status":
 		statusCmd(os.Args[2:])
 	case "-h", "--help", "help":
@@ -77,8 +83,10 @@ func usage() {
 	fmt.Fprint(os.Stderr, `ghydra (M1 dev)
 
 用法:
-  ghydra serve [--listen ADDR] [--scheduler on|off]   CONNECT 代理服务（通道 A 数据面）
-  ghydra status                                     last_good 持久化观察口
+  ghydra on [--port N] [--mode pac|proxy]             接管系统代理 + 后台拉起 serve
+  ghydra off                                          恢复系统代理 + 停止 serve
+  ghydra serve [--listen ADDR] [--scheduler on|off]   前台运行（调试用）
+  ghydra status                                      last_good 持久化观察口
   ghydra bench [--json]                             四级自举链探测报告
   ghydra poc [--listen ADDR] [--rewrite-sni N]      裸 SNI 转发器（调试工具）
   ghydra loadtest [--mode sni|connect] [--concurrency N] [--rounds M]  并发压测
@@ -91,6 +99,8 @@ func statusCmd(args []string) {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
 	dbPath := fs.String("db", defaultDBPath(), "SQLite 路径")
 	_ = fs.Parse(args)
+
+	ensureReconcile(*dbPath) // 任何命令入口都对账（崩溃残留恢复）
 
 	if *dbPath == "" {
 		fmt.Println("未配置数据库路径（HOME 不可用）")
@@ -130,7 +140,10 @@ func serveCmd(args []string) {
 	timeout := fs.Duration("dial-timeout", proxy.DefaultDialTimeout, "上游连接超时")
 	schedOn := fs.Bool("scheduler", true, "IP 调度器（off = W1 直连行为，对照/逃生）")
 	dbPath := fs.String("db", defaultDBPath(), "SQLite 路径（空 = 不持久化）")
+	managed := fs.Bool("managed", false, "由 ghydra on 拉起（退出时恢复系统代理）")
 	_ = fs.Parse(args)
+
+	ensureReconcile(*dbPath)
 
 	m := rules.New(rules.DefaultDomains)
 
@@ -143,15 +156,15 @@ func serveCmd(args []string) {
 
 	var (
 		reportEvent func(proxy.Event)
-		closeAll    func()
+		sc          *sched.Scheduler
 	)
 	if *schedOn {
 		sel2, shutdown, err := startScheduler(m, *dbPath)
 		if err != nil {
 			log.Fatalf("调度器启动失败: %v", err)
 		}
-		sel, reportEvent, closeAll = sel2, sel2.ReportEvent, shutdown
-		defer closeAll()
+		sel, reportEvent, sc = sel2, sel2.ReportEvent, sel2.Sched
+		defer shutdown()
 	}
 
 	var conns atomic.Int64
@@ -174,25 +187,108 @@ func serveCmd(args []string) {
 		},
 	}
 
-	ln, err := proxy.NewListener(*listen, *backlog)
-	if err != nil {
-		log.Fatalf("监听失败: %v", err)
+	// 同端口托管 PAC / status（R5：主端口 http 分流，AutoConfigURL 直指）
+	actualAddr := *listen
+	mux := http.NewServeMux()
+	mux.HandleFunc("/pac", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ns-proxy-autoconfig")
+		fmt.Fprint(w, m.PAC(fmt.Sprintf("127.0.0.1:%d", portOf(actualAddr))))
+	})
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		out := map[string]any{
+			"listen":    actualAddr,
+			"scheduler": *schedOn,
+			"conns":     conns.Load(),
+			"uptime_s":  time.Since(startTime).Seconds(),
+		}
+		if sc != nil {
+			pools := map[string]any{}
+			for _, host := range sc.Hosts() {
+				pools[host] = map[string]any{
+					"sticky": sc.StickyIP(host),
+					"ips":    sc.Snapshot(host),
+				}
+			}
+			out["pools"] = pools
+		}
+		writeJSON(w, out)
+	})
+	srv.HTTPHandler = mux
+
+	// 端口冲突迁移（W3：9801 被占 → +1..+8）
+	var ln net.Listener
+	var err error
+	for i := 0; i < 9; i++ {
+		ln, err = proxy.NewListener(actualAddr, *backlog)
+		if err == nil {
+			break
+		}
+		if p := portOf(actualAddr); p > 0 {
+			actualAddr = fmt.Sprintf("127.0.0.1:%d", p+1)
+		} else {
+			break
+		}
 	}
+	if err != nil {
+		log.Fatalf("监听失败（含迁移尝试）: %v", err)
+	}
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sig
 		log.Printf("收到退出信号，正在关闭…")
+		if *managed {
+			restoreSnapshot(*dbPath) // on 拉起的 serve：退出时恢复系统代理
+		}
 		ln.Close()
 	}()
 
 	log.Printf("ghydra serve 已启动: %s | 加速域名 %d 条 | scheduler=%t | backlog %d",
 		ln.Addr().String(), len(m.Domains()), *schedOn, *backlog)
-	log.Printf("将系统代理指向 %s 即可使用（一键接管 = W3 ghydra on）", ln.Addr().String())
+	log.Printf("PAC: http://%s/pac | 系统代理指向 %s（或 ghydra on 一键接管）",
+		ln.Addr().String(), ln.Addr().String())
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, net.ErrClosed) {
 		log.Fatalf("serve 退出: %v", err)
 	}
+	if *managed {
+		restoreSnapshot(*dbPath) // 正常退出路径也恢复
+	}
 	log.Printf("已退出，共服务 %d 条连接", conns.Load())
+}
+
+var startTime = time.Now()
+
+// restoreSnapshot 恢复接管前的系统代理（managed serve 退出 hook）。
+func restoreSnapshot(dbPath string) {
+	if dbPath == "" {
+		return
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return
+	}
+	defer st.Close()
+	ps, pac, ok, err := st.LoadSnapshot()
+	if err != nil || !ok {
+		return
+	}
+	if err := sysproxy.Apply(sysproxy.Setting{ProxyServer: ps, PACURL: pac}); err != nil {
+		log.Printf("[restore] 恢复系统代理失败: %v（原值 server=%q pac=%q）", err, ps, pac)
+		return
+	}
+	st.DeleteSnapshot()
+	removeDaemonState()
+	log.Printf("[restore] 系统代理已恢复")
+}
+
+func portOf(addr string) int {
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return -1
+	}
+	n, _ := strconv.Atoi(p)
+	return n
 }
 
 // startScheduler 装配 M1-W2 调度器：候选喂数（自举链 + last_good
