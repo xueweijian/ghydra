@@ -1,6 +1,6 @@
 dist/
 *.exe
-ghydra
+/ghydra
 *.test
 *.out
 .idea/
