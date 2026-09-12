@@ -19,6 +19,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -27,13 +28,18 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/xueweijian/ghydra/engine/bootstrap"
+	"github.com/xueweijian/ghydra/engine/proxy"
+	"github.com/xueweijian/ghydra/engine/rules"
 	"github.com/xueweijian/ghydra/engine/sni"
 )
 
@@ -50,6 +56,8 @@ func main() {
 		pocCmd(os.Args[2:])
 	case "loadtest":
 		loadtestCmd(os.Args[2:])
+	case "serve":
+		serveCmd(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -60,13 +68,68 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `ghydra (M0 PoC)
+	fmt.Fprint(os.Stderr, `ghydra (M1 dev)
 
 用法:
-  ghydra bench [--json]                                四级自举链探测报告
-  ghydra poc [--listen ADDR] [--rewrite-sni NAME] [--upstream HOST:PORT]  本地 SNI 转发器
-  ghydra loadtest [--concurrency N] [--rounds M]       并发压测（内置假上游 + 转发器 + 客户端）
+  ghydra serve [--listen ADDR] [--backlog N]     CONNECT 代理服务（通道 A 数据面）
+  ghydra bench [--json]                          四级自举链探测报告
+  ghydra poc [--listen ADDR] [--rewrite-sni N]   裸 SNI 转发器（调试工具）
+  ghydra loadtest [--concurrency N] [--rounds M] 并发压测（内置假上游 + 转发器 + 客户端）
 `)
+}
+
+// serveCmd 启动 CONNECT 代理（M1 W1 内核）。
+//
+// W1 阶段：命中加速域名的连接直连域名本身（系统 DNS）——内核与规则
+// 已就位，加速效果待 W2 IP 调度器接入 Select 后生效。
+func serveCmd(args []string) {
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	listen := fs.String("listen", "127.0.0.1:9801", "本地监听地址（仅 IPv4 回环）")
+	backlog := fs.Int("backlog", 4096, "listen backlog")
+	timeout := fs.Duration("dial-timeout", proxy.DefaultDialTimeout, "上游连接超时")
+	_ = fs.Parse(args)
+
+	m := rules.New(rules.DefaultDomains)
+	var conns atomic.Int64
+	srv := &proxy.Server{
+		Selector: proxy.SelectorFunc(func(host string) (string, bool) {
+			if m.Match(host) {
+				// W1：暂无调度器，直连域名本身；W2 起返回择优 IP:443
+				return net.JoinHostPort(host, "443"), true
+			}
+			return "", false
+		}),
+		DialTimeout: *timeout,
+		OnEvent: func(e proxy.Event) {
+			n := conns.Add(1)
+			status := "OK"
+			if e.DialErr != nil {
+				status = e.DialErr.Error()
+			}
+			log.Printf("[conn#%d] %s -> %s accel=%t dial=%.1fms rx=%dB tx=%dB %s",
+				n, e.Host, e.Target, e.Accel, e.DialMS, e.Rx, e.Tx, status)
+		},
+	}
+
+	ln, err := proxy.NewListener(*listen, *backlog)
+	if err != nil {
+		log.Fatalf("监听失败: %v", err)
+	}
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sig
+		log.Printf("收到退出信号，正在关闭…")
+		ln.Close()
+	}()
+
+	log.Printf("ghydra serve 已启动: %s | 加速域名 %d 条 | backlog %d | dial-timeout %s",
+		ln.Addr().String(), len(m.Domains()), *backlog, *timeout)
+	log.Printf("将系统代理指向 %s 即可使用（一键接管 = W3 ghydra on）", ln.Addr().String())
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, net.ErrClosed) {
+		log.Fatalf("serve 退出: %v", err)
+	}
+	log.Printf("已退出，共服务 %d 条连接", conns.Load())
 }
 
 func benchCmd(args []string) {
@@ -191,6 +254,8 @@ func loadtestCmd(args []string) {
 	concurrency := fs.Int("concurrency", 1000, "并发 worker 数")
 	rounds := fs.Int("rounds", 3, "每 worker 建拆连接轮数")
 	deadline := fs.Duration("timeout", 15*time.Second, "单连接超时")
+	mode := fs.String("mode", "sni", "压测模式: sni(M0 裸SNI转发) | connect(M1 CONNECT内核+自建backlog)")
+	backlog := fs.Int("backlog", 4096, "connect 模式 listen backlog")
 	_ = fs.Parse(args)
 
 	// ① 假上游（自签 github.com 证书的 HTTPS 服务）
@@ -208,12 +273,32 @@ func loadtestCmd(args []string) {
 	defer upSrv.Close()
 	go upSrv.ServeTLS(upLn, "", "")
 
-	// ② 转发器（与 poc 完全同一条代码路径）
-	fwdLn, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		log.Fatal(err)
+	// ② 中继：sni = M0 裸转发路径；connect = M1 CONNECT 内核（自建 socket backlog）
+	var fwdAddr string
+	switch *mode {
+	case "connect":
+		sel := proxy.SelectorFunc(func(string) (string, bool) { return upLn.Addr().String(), true })
+		srv := &proxy.Server{
+			Selector:    sel,
+			DialTimeout: 5 * time.Second,
+			OnEvent:     func(proxy.Event) {},
+		}
+		fwdLn, err := proxy.NewListener("127.0.0.1:0", *backlog)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fwdAddr = fwdLn.Addr().String()
+		go srv.Serve(fwdLn)
+	case "sni":
+		fwdLn, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			log.Fatal(err)
+		}
+		fwdAddr = fwdLn.Addr().String()
+		go forwardServer(fwdLn, "", upLn.Addr().String(), 5*time.Second)
+	default:
+		log.Fatalf("未知模式 %q（sni|connect）", *mode)
 	}
-	go forwardServer(fwdLn, "", upLn.Addr().String(), 5*time.Second)
 	time.Sleep(200 * time.Millisecond)
 
 	// ③ 客户端压测
@@ -240,7 +325,12 @@ func loadtestCmd(args []string) {
 					atomic.StoreInt64(&peakGoroutines, int64(n))
 				}
 				t0 := time.Now()
-				err := oneRound(fwdLn.Addr().String(), clientCfg, *deadline)
+				var err error
+				if *mode == "connect" {
+					err = connectRound(fwdAddr, clientCfg, *deadline)
+				} else {
+					err = oneRound(fwdAddr, clientCfg, *deadline)
+				}
 				lat := time.Since(t0)
 				mu.Lock()
 				latencies = append(latencies, lat)
@@ -292,6 +382,39 @@ func loadtestCmd(args []string) {
 	}
 	fmt.Printf("  goroutine: 基线 %d → 峰值 %d → 回落 %d %s\n", baseGoroutines, peakGoroutines, finalGoroutines, leakVerdict(baseGoroutines, finalGoroutines))
 	fmt.Printf("  内存: HeapAlloc %.1fMB / HeapSys %.1fMB\n", float64(ms.HeapAlloc)/1e6, float64(ms.HeapSys)/1e6)
+}
+
+// connectRound 完成一次 CONNECT 隧道全流程（M1 内核路径）。
+func connectRound(addr string, cfg *tls.Config, timeout time.Duration) error {
+	raw, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return fmt.Errorf("dial/tls: %w", err)
+	}
+	defer raw.Close()
+	raw.SetDeadline(time.Now().Add(timeout))
+	fmt.Fprint(raw, "CONNECT github.com:443 HTTP/1.1\r\nHost: github.com:443\r\n\r\n")
+	br := bufio.NewReader(raw)
+	line, err := br.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("read: %w", err)
+	}
+	if !strings.HasPrefix(line, "HTTP/1.1 200") {
+		return fmt.Errorf("tunnel: %q", strings.TrimSpace(line))
+	}
+	c := tls.Client(raw, cfg)
+	defer c.Close()
+	if err := c.Handshake(); err != nil {
+		return fmt.Errorf("dial/tls: %w", err)
+	}
+	fmt.Fprint(c, "GET / HTTP/1.1\r\nHost: github.com\r\nConnection: close\r\n\r\n")
+	body, err := io.ReadAll(c)
+	if err != nil {
+		return fmt.Errorf("read: %w", err)
+	}
+	if len(body) == 0 || !containsStatus200(body) {
+		return fmt.Errorf("bad response (%d bytes)", len(body))
+	}
+	return nil
 }
 
 // oneRound 完成一次：建连 → TLS 握手 → 请求 → 读完整响应 → 关闭。
