@@ -1,0 +1,150 @@
+[
+  {
+    "mode": "proxy",
+    "proxy_url": "http://127.0.0.1:19803",
+    "started_at": "2026-09-12T16:38:03.18905201Z",
+    "duration_ms": 583.794,
+    "total": 6,
+    "passed": 6,
+    "covered_total": 5,
+    "covered_passed": 5,
+    "scenarios": [
+      {
+        "scenario": "web",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "web",
+            "name": "web",
+            "mode": "proxy",
+            "target": "https://github.com/",
+            "ok": true,
+            "reachable": true,
+            "status": 200,
+            "class": "ok",
+            "duration_ms": 570.072,
+            "connect_ms": 2.3809899999999997,
+            "tls_ms": 177.081302,
+            "ttfb_ms": 348.801094,
+            "bytes": 524288,
+            "rate_bps": 2369441.282945292
+          }
+        ]
+      },
+      {
+        "scenario": "login",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "login",
+            "name": "login",
+            "mode": "proxy",
+            "target": "https://github.com/login",
+            "ok": true,
+            "reachable": true,
+            "status": 200,
+            "class": "ok",
+            "duration_ms": 428.186,
+            "connect_ms": 2.2985420000000003,
+            "tls_ms": 177.909636,
+            "ttfb_ms": 349.052864,
+            "bytes": 48570,
+            "rate_bps": 613775.0299561262
+          }
+        ]
+      },
+      {
+        "scenario": "clone",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "clone",
+            "name": "clone-dry-run",
+            "mode": "proxy",
+            "target": "https://github.com/xueweijian/ghydra.git/info/refs?service=git-upload-pack",
+            "ok": true,
+            "reachable": true,
+            "status": 200,
+            "class": "ok",
+            "duration_ms": 571.736,
+            "connect_ms": 4.788698,
+            "tls_ms": 174.057292,
+            "ttfb_ms": 571.527239,
+            "bytes": 444,
+            "rate_bps": 2126946.107784431
+          }
+        ]
+      },
+      {
+        "scenario": "push",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "push",
+            "name": "push-dry-run",
+            "mode": "proxy",
+            "target": "https://github.com/xueweijian/ghydra.git/info/refs?service=git-receive-pack",
+            "ok": true,
+            "reachable": true,
+            "status": 401,
+            "class": "ok",
+            "duration_ms": 582.034,
+            "connect_ms": 2.858646,
+            "tls_ms": 176.80380200000002,
+            "ttfb_ms": 581.658594,
+            "bytes": 26,
+            "rate_bps": 69131.83707221353
+          }
+        ]
+      },
+      {
+        "scenario": "release",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "release",
+            "name": "release-ttfb-rate",
+            "mode": "proxy",
+            "target": "https://github.com/cli/cli/releases/latest",
+            "ok": true,
+            "reachable": true,
+            "status": 200,
+            "class": "ok",
+            "duration_ms": 524.123,
+            "connect_ms": 2.1025,
+            "tls_ms": 170.635208,
+            "ttfb_ms": 431.433697,
+            "bytes": 225117,
+            "rate_bps": 2428724.9752196516
+          }
+        ]
+      },
+      {
+        "scenario": "ssh",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "ssh",
+            "name": "ssh-22",
+            "mode": "proxy",
+            "target": "github.com:22",
+            "ok": true,
+            "reachable": true,
+            "class": "ok",
+            "duration_ms": 79.71
+          },
+          {
+            "scenario": "ssh",
+            "name": "ssh-443",
+            "mode": "proxy",
+            "target": "ssh.github.com:443",
+            "ok": true,
+            "reachable": true,
+            "class": "ok",
+            "duration_ms": 120.829
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,155 @@
+[
+  {
+    "mode": "direct",
+    "proxy_url": "http://127.0.0.1:9801",
+    "started_at": "2026-09-12T16:37:32.048348272Z",
+    "duration_ms": 1512.967,
+    "total": 6,
+    "passed": 6,
+    "covered_total": 5,
+    "covered_passed": 5,
+    "scenarios": [
+      {
+        "scenario": "web",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "web",
+            "name": "web",
+            "mode": "direct",
+            "target": "https://github.com/",
+            "ok": true,
+            "reachable": true,
+            "status": 200,
+            "class": "ok",
+            "duration_ms": 610.106,
+            "dns_ms": 1.9569269999999999,
+            "connect_ms": 80.933438,
+            "tls_ms": 194.955781,
+            "ttfb_ms": 360.332396,
+            "bytes": 524288,
+            "rate_bps": 2099059.079135758
+          }
+        ]
+      },
+      {
+        "scenario": "login",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "login",
+            "name": "login",
+            "mode": "direct",
+            "target": "https://github.com/login",
+            "ok": true,
+            "reachable": true,
+            "status": 200,
+            "class": "ok",
+            "duration_ms": 741.528,
+            "dns_ms": 1.743594,
+            "connect_ms": 115.492708,
+            "tls_ms": 165.35328099999998,
+            "ttfb_ms": 639.947031,
+            "bytes": 48570,
+            "rate_bps": 478140.8936993759
+          }
+        ]
+      },
+      {
+        "scenario": "clone",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "clone",
+            "name": "clone-dry-run",
+            "mode": "direct",
+            "target": "https://github.com/xueweijian/ghydra.git/info/refs?service=git-upload-pack",
+            "ok": true,
+            "reachable": true,
+            "status": 200,
+            "class": "ok",
+            "duration_ms": 602.241,
+            "dns_ms": 2.340989,
+            "connect_ms": 116.036822,
+            "tls_ms": 164.160312,
+            "ttfb_ms": 601.9466669999999,
+            "bytes": 444,
+            "rate_bps": 1505881.0760944772
+          }
+        ]
+      },
+      {
+        "scenario": "push",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "push",
+            "name": "push-dry-run",
+            "mode": "direct",
+            "target": "https://github.com/xueweijian/ghydra.git/info/refs?service=git-receive-pack",
+            "ok": true,
+            "reachable": true,
+            "status": 401,
+            "class": "ok",
+            "duration_ms": 587.792,
+            "dns_ms": 2.1549479999999996,
+            "connect_ms": 106.91895799999999,
+            "tls_ms": 168.842552,
+            "ttfb_ms": 587.076354,
+            "bytes": 26,
+            "rate_bps": 36294.90447460334
+          }
+        ]
+      },
+      {
+        "scenario": "release",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "release",
+            "name": "release-ttfb-rate",
+            "mode": "direct",
+            "target": "https://github.com/cli/cli/releases/latest",
+            "ok": true,
+            "reachable": true,
+            "status": 200,
+            "class": "ok",
+            "duration_ms": 1512.148,
+            "dns_ms": 2.31875,
+            "connect_ms": 115.31692699999999,
+            "tls_ms": 168.523959,
+            "ttfb_ms": 1352.515521,
+            "bytes": 225118,
+            "rate_bps": 1410228.9199865197
+          }
+        ]
+      },
+      {
+        "scenario": "ssh",
+        "ok": true,
+        "checks": [
+          {
+            "scenario": "ssh",
+            "name": "ssh-22",
+            "mode": "direct",
+            "target": "github.com:22",
+            "ok": true,
+            "reachable": true,
+            "class": "ok",
+            "duration_ms": 117.028
+          },
+          {
+            "scenario": "ssh",
+            "name": "ssh-443",
+            "mode": "direct",
+            "target": "ssh.github.com:443",
+            "ok": true,
+            "reachable": true,
+            "class": "ok",
+            "duration_ms": 124.71
+          }
+        ]
+      }
+    ]
+  }
+]
