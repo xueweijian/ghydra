@@ -210,9 +210,10 @@ func TestTunnelAccelerated(t *testing.T) {
 		if !ev.Accel || ev.Host != "github.com" || ev.Target != up.Addr {
 			t.Errorf("事件字段异常: %+v", ev)
 		}
-		if ev.DialErr != nil || ev.DialMS <= 0 {
+		if ev.DialErr != nil {
 			t.Errorf("事件应记录成功拨号: %+v", ev)
 		}
+		// DialMS 可为 0：windows 计时器精度 ~15ms，本地 dial 快于一个 tick
 		if ev.Rx == 0 || ev.Tx == 0 {
 			t.Errorf("事件应记录双向字节: %+v", ev)
 		}
