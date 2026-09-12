@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22" # wrangler 4.131 要求 ≥22（本地沙箱同为 22，版本对齐）
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
