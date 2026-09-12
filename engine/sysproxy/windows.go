@@ -4,9 +4,16 @@
 // ProxyServer 手动模式 / AutoConfigURL PAC 模式（优先）。
 // 设置后调用 wininet InternetSetOption 通知所有应用立即生效
 // （无需注销/重启——这是 Windows 代理工具的标准做法）。
+//
+// W4.5 语义：applyOS 是 desired-state 全量写入——Setting 里未设置
+// 的字段会从注册表删除/归零（如 PAC 接管时删 AutoConfigURL、关
+// AutoDetect），恢复时全量写回快照值。currentOS 读取全部五个值，
+// 含「ProxyServer 有值但 ProxyEnable=0」的禁用态（恢复时写回值
+// 但不启用——用户切回手动代理时代址还在）。
 package sysproxy
 
 import (
+	"errors"
 	"fmt"
 	"syscall"
 
@@ -25,13 +32,21 @@ func currentOS() (Setting, error) {
 	defer k.Close()
 
 	var s Setting
+	// 各值独立读取、不存在不算错（默认装机只有 ProxyEnable=0）
 	if url, _, err := k.GetStringValue("AutoConfigURL"); err == nil {
 		s.PACURL = url
 	}
-	if enabled, _, err := k.GetIntegerValue("ProxyEnable"); err == nil && enabled == 1 {
-		if srv, _, err := k.GetStringValue("ProxyServer"); err == nil {
-			s.ProxyServer = srv
-		}
+	if srv, _, err := k.GetStringValue("ProxyServer"); err == nil {
+		s.ProxyServer = srv
+	}
+	if ov, _, err := k.GetStringValue("ProxyOverride"); err == nil {
+		s.ProxyOverride = ov
+	}
+	if en, _, err := k.GetIntegerValue("ProxyEnable"); err == nil && en == 1 {
+		s.ProxyEnabled = true
+	}
+	if ad, _, err := k.GetIntegerValue("AutoDetect"); err == nil && ad == 1 {
+		s.AutoDetect = true
 	}
 	return s, nil
 }
@@ -43,40 +58,49 @@ func applyOS(s Setting) error {
 	}
 	defer k.Close()
 
+	// AutoConfigURL：非空写入，空则删除（PAC 残留会让 WinINet 继续走旧 PAC）
 	if s.PACURL != "" {
 		if err := k.SetStringValue("AutoConfigURL", s.PACURL); err != nil {
-			return err
+			return fmt.Errorf("写 AutoConfigURL: %w", err)
 		}
-		// PAC 模式下停用手动代理，避免叠加；两次注册表写完后
-		// 必须通知 WinINet，否则已有进程可能继续使用旧配置。
-		if err := k.SetDWordValue("ProxyEnable", 0); err != nil {
-			return err
+	} else if err := k.DeleteValue("AutoConfigURL"); err != nil && !errors.Is(err, registry.ErrNotExist) {
+		return fmt.Errorf("删 AutoConfigURL: %w", err)
+	}
+
+	// ProxyServer/ProxyOverride：值本身保留（禁用态也写回，用户切回手动时代址还在）
+	if s.ProxyServer != "" {
+		if err := k.SetStringValue("ProxyServer", s.ProxyServer); err != nil {
+			return fmt.Errorf("写 ProxyServer: %w", err)
 		}
-		return refreshWininet()
 	}
-	if err := k.SetStringValue("ProxyServer", s.ProxyServer); err != nil {
-		return err
+	if s.ProxyOverride != "" {
+		if err := k.SetStringValue("ProxyOverride", s.ProxyOverride); err != nil {
+			return fmt.Errorf("写 ProxyOverride: %w", err)
+		}
+	} else if err := k.DeleteValue("ProxyOverride"); err != nil && !errors.Is(err, registry.ErrNotExist) {
+		return fmt.Errorf("删 ProxyOverride: %w", err)
 	}
-	if err := k.SetDWordValue("ProxyEnable", 1); err != nil {
-		return err
+
+	// 启用位：PAC 接管时 ProxyEnable=0 避免与手动代理叠加；
+	// AutoDetect=0 避免 WPAD 抢答（PAC 与 WPAD 同时开时行为不可预期）。
+	if err := k.SetDWordValue("ProxyEnable", b2i(s.ProxyEnabled)); err != nil {
+		return fmt.Errorf("写 ProxyEnable: %w", err)
+	}
+	if err := k.SetDWordValue("AutoDetect", b2i(s.AutoDetect)); err != nil {
+		return fmt.Errorf("写 AutoDetect: %w", err)
 	}
 	return refreshWininet()
 }
 
 func clearOS() error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, internetSettings, registry.SET_VALUE)
-	if err != nil {
-		return fmt.Errorf("打开注册表: %w", err)
-	}
-	defer k.Close()
+	return applyOS(Setting{})
+}
 
-	if err := k.SetDWordValue("ProxyEnable", 0); err != nil {
-		return err
+func b2i(b bool) uint32 {
+	if b {
+		return 1
 	}
-	if err := k.DeleteValue("AutoConfigURL"); err != nil && err != registry.ErrNotExist {
-		return err
-	}
-	return refreshWininet()
+	return 0
 }
 
 // refreshWininet 通知系统设置已变更并刷新（39=SETTINGS_CHANGED, 37=REFRESH）。

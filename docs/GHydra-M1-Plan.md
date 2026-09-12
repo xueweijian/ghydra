@@ -125,6 +125,20 @@ engine/
 | v0.1 tag + release（CI artifact + SHA256） | 发布 | 待 Windows 真机验收后执行 |
 | **dogfooding 启动**（用户主力 PC，7 天） | 验收数据 | 每日 doctor report 贴回 |
 
+### W4.5（插入）· Windows 平台行为证明（无真机期间的开发替代）
+
+背景：当前无 Windows 主机。Windows on/off/PAC/浏览器/Git 行为属**现场验收项**（R1 改判），不阻塞代码推进；GitHub Actions Windows runner 承担平台行为证明。
+
+| 任务 | 交付 | 测试证据 |
+|---|---|---|
+| Setting 升级为完整快照（ProxyEnabled/ProxyOverride/AutoDetect；desired-state 全量写入语义） | `engine/sysproxy/sysproxy.go` + `windows.go` | L1：语义+JSON roundtrip ✓；恢复不丢字段 |
+| store 快照升级为整 Setting JSON（`setting_json` 列 + ALTER 迁移） | `engine/store/` | L1：roundtrip ✓ |
+| 注册表接管/恢复集成测试（PAC/手动/禁用态/零态四场景 + bypass/WPAD 字段完整性） | `sysproxy/windows_registry_integration_test.go` | CI windows-2022（tags=integration） |
+| on/off 生命周期 + kill -9 崩溃对账端到端（真实二进制，HOME 隔离） | `cmd/ghydra/daemon_integration_test.go` | CI windows-2022（tags=integration） |
+| CI `windows-integration` job（固定 windows-2022 镜像） | `.github/workflows/ci.yml` | runner 升级不漂移基线 |
+
+边界：CI runner 网络位置 ≠ 大陆直连环境；「Chrome/Git 走 PAC、真实 GFW 行为、7 天 SLA」仍属现场验收，由后续借用的 Windows 真机一次性完成。
+
 ## 5. 测试与验收（映射 DevWorkflow 金字塔）
 
 - **L1 单元（CI 三平台）**：EWMA、状态机、规则匹配、PAC、分类器、粘性/熔断交互。

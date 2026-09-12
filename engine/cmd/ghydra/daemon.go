@@ -104,14 +104,21 @@ func ensureReconcile(dbPath string) {
 		return
 	}
 	defer st.Close()
-	ps, pac, ok, err := st.LoadSnapshot()
+	psJSON, ok, err := st.LoadSnapshotJSON()
 	if err != nil || !ok {
 		return
 	}
 	if d := loadDaemonState(); d != nil && serveAlive(d.Port) {
 		return // serve 正常运行中，快照属于当前会话
 	}
-	orig := sysproxy.Setting{ProxyServer: ps, PACURL: pac}
+	var orig sysproxy.Setting
+	if json.Unmarshal([]byte(psJSON), &orig) != nil {
+		log.Printf("[reconcile] 快照损坏，清除代理并放弃恢复（原文: %s）", psJSON)
+		sysproxy.Clear()
+		st.DeleteSnapshot()
+		removeDaemonState()
+		return
+	}
 	if err := sysproxy.Apply(orig); err != nil {
 		log.Printf("[reconcile] 恢复原值失败（%v），请手动检查系统代理设置", err)
 		return
@@ -183,8 +190,12 @@ func onCmd(args []string) {
 	// 快照原值（Current 失败继续——Linux 无桌面场景 PAC 接管降级提示）
 	if cur, err := sysproxy.Current(); err == nil {
 		if st, err := store.Open(*dbPath); err == nil {
-			if err := st.SaveSnapshot(cur.ProxyServer, cur.PACURL); err != nil {
-				log.Fatalf("快照保存失败: %v", err)
+			curJSON, merr := json.Marshal(cur)
+			if merr == nil {
+				if err := st.SaveSnapshotJSON(string(curJSON)); err != nil {
+					st.Close()
+					log.Fatalf("快照保存失败: %v", err)
+				}
 			}
 			st.Close()
 		}
@@ -216,7 +227,7 @@ func onCmd(args []string) {
 	// 接管
 	var setting sysproxy.Setting
 	if *mode == "proxy" {
-		setting = sysproxy.Setting{ProxyServer: fmt.Sprintf("127.0.0.1:%d", chosen)}
+		setting = sysproxy.Setting{ProxyServer: fmt.Sprintf("127.0.0.1:%d", chosen), ProxyEnabled: true}
 	} else {
 		setting = sysproxy.Setting{PACURL: fmt.Sprintf("http://127.0.0.1:%d/pac", chosen)}
 	}
@@ -245,13 +256,19 @@ func offCmd(args []string) {
 	// 先恢复代理（浏览器立即回到直连，不等 serve 退出）
 	if *dbPath != "" {
 		if st, err := store.Open(*dbPath); err == nil {
-			if ps, pac, ok, _ := st.LoadSnapshot(); ok {
-				orig := sysproxy.Setting{ProxyServer: ps, PACURL: pac}
-				if err := sysproxy.Apply(orig); err != nil {
-					// 恢复失败不能删快照；下次命令/用户手动修复环境后
-					// 仍需有机会重试（与 ensureReconcile 一致）。
-					log.Printf("恢复原值失败: %v（原值 %s）；保留快照重试", err, orig)
+			if psJSON, ok, _ := st.LoadSnapshotJSON(); ok {
+				var orig sysproxy.Setting
+				if json.Unmarshal([]byte(psJSON), &orig) == nil {
+					if err := sysproxy.Apply(orig); err != nil {
+						// 恢复失败不能删快照；下次命令/用户手动修复环境后
+						// 仍需有机会重试（与 ensureReconcile 一致）。
+						log.Printf("恢复原值失败: %v（原值 %s）；保留快照重试", err, orig)
+					} else {
+						st.DeleteSnapshot()
+					}
 				} else {
+					// 快照损坏：无法恢复，清除代理 + 删快照（与 reconcile 一致）
+					sysproxy.Clear()
 					st.DeleteSnapshot()
 				}
 			}

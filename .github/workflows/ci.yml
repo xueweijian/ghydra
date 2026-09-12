@@ -38,6 +38,21 @@ jobs:
       - run: go vet ./...
       - run: go test ./... -race -count=1
 
+  # W4.5：Windows 平台行为证明（无 Windows 真机期间的开发替代）。
+  # 真实跑注册表接管/恢复 + on/off 生命周期 + kill -9 崩溃对账。
+  # 注意：这是平台证明，不等于大陆网络下的现场验收（DevWorkflow 三环境分工）。
+  windows-integration:
+    runs-on: windows-2022 # 固定镜像：runner 升级不漂移集成基线（退役时切 windows-2025）
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: sysproxy 注册表接管/恢复集成测试
+        run: go test -tags=integration ./engine/sysproxy/... -run Integration -v -count=1
+      - name: ghydra on/off 生命周期 + 崩溃对账集成测试
+        run: go test -tags=integration ./engine/cmd/ghydra/ -run Integration -v -count=1
+
   bench:
     runs-on: ubuntu-latest
     steps:

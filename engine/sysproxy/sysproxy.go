@@ -13,24 +13,39 @@ import (
 	"fmt"
 )
 
-// Setting 是系统代理的一个状态快照（空 Setting = 未设置代理）。
+// Setting 是系统代理的一个完整状态快照（空 Setting = 未设置代理）。
 // PAC 模式优先于手动 ProxyServer（浏览器兼容面更广，github.com
 // 等命中 PAC 走 GHydra，其余 DIRECT 不受影响）。
+//
+// W4.5 语义升级：Setting 是「desired-state 全量快照」而非「两字段
+// 输入」——接管前的原值可能包含 ProxyEnable 位、bypass 列表
+// （ProxyOverride）、WPAD 自动检测（AutoDetect）。旧版只存
+// ProxyServer+PACURL，恢复时会丢掉这些字段（用户手动代理的
+// bypass 列表被清空 / WPAD 被关闭 / 已禁用代理被错误启用）。
 type Setting struct {
-	ProxyServer string // 手动代理 host:port；空 = 未用
-	PACURL      string // PAC 自动配置 URL；空 = 未用
+	ProxyServer   string // 手动代理 host:port；空 = 未设置该值
+	ProxyEnabled  bool   // 手动代理启用位（Windows ProxyEnable）
+	ProxyOverride string // bypass 列表，";" 分隔（Windows ProxyOverride / macOS bypass domains）
+	PACURL        string // PAC 自动配置 URL；空 = 未用
+	AutoDetect    bool   // WPAD 自动检测（Windows AutoDetect；mac/linux 无对应不落盘）
 }
 
 // IsZero 未设置任何代理。
-func (s Setting) IsZero() bool { return s.ProxyServer == "" && s.PACURL == "" }
+func (s Setting) IsZero() bool {
+	return s.ProxyServer == "" && s.PACURL == "" && s.ProxyOverride == "" && !s.ProxyEnabled && !s.AutoDetect
+}
 
 // String 诊断输出。
 func (s Setting) String() string {
 	switch {
 	case s.PACURL != "":
 		return fmt.Sprintf("PAC %s", s.PACURL)
-	case s.ProxyServer != "":
+	case s.ProxyServer != "" && s.ProxyEnabled:
 		return fmt.Sprintf("PROXY %s", s.ProxyServer)
+	case s.ProxyServer != "":
+		return fmt.Sprintf("PROXY %s（未启用）", s.ProxyServer)
+	case s.AutoDetect:
+		return "WPAD 自动检测"
 	default:
 		return "(无代理)"
 	}
@@ -53,7 +68,8 @@ func (e *ApplyError) Error() string {
 // Current 读当前系统代理设置。
 func Current() (Setting, error) { return currentOS() }
 
-// Apply 应用代理设置（调用方负责先快照）。PACURL 非空时用 PAC 模式。
+// Apply 应用代理设置（desired-state 全量写入；调用方负责先快照）。
+// PACURL 非空时用 PAC 模式；IsZero 时等价于 Clear。
 func Apply(s Setting) error {
 	if s.IsZero() {
 		return clearOS()

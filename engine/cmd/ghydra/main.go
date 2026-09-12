@@ -287,12 +287,19 @@ func restoreSnapshot(dbPath string) {
 		return
 	}
 	defer st.Close()
-	ps, pac, ok, err := st.LoadSnapshot()
+	psJSON, ok, err := st.LoadSnapshotJSON()
 	if err != nil || !ok {
 		return
 	}
-	if err := sysproxy.Apply(sysproxy.Setting{ProxyServer: ps, PACURL: pac}); err != nil {
-		log.Printf("[restore] 恢复系统代理失败: %v（原值 server=%q pac=%q）", err, ps, pac)
+	var orig sysproxy.Setting
+	if json.Unmarshal([]byte(psJSON), &orig) != nil {
+		sysproxy.Clear() // 快照损坏：清除代理，避免残留 GHydra 接管态
+		st.DeleteSnapshot()
+		removeDaemonState()
+		return
+	}
+	if err := sysproxy.Apply(orig); err != nil {
+		log.Printf("[restore] 恢复系统代理失败: %v（原值 %s）；保留快照待对账", err, orig)
 		return
 	}
 	st.DeleteSnapshot()

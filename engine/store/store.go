@@ -114,9 +114,10 @@ CREATE TABLE IF NOT EXISTS probe_log (
 );
 CREATE TABLE IF NOT EXISTS sysproxy_snapshot (
   id           INTEGER PRIMARY KEY CHECK (id = 1), -- 单行：接管前原值
-  proxy_server TEXT NOT NULL,
-  pac_url      TEXT NOT NULL,
-  taken_at     INTEGER NOT NULL
+  proxy_server TEXT NOT NULL,                      -- W4.5 前遗留列，恒空串
+  pac_url      TEXT NOT NULL,                      -- W4.5 前遗留列，恒空串
+  taken_at     INTEGER NOT NULL,
+  setting_json TEXT                               -- 完整 Setting JSON（W4.5）
 );
 CREATE TABLE IF NOT EXISTS doctor_log (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -141,6 +142,9 @@ CREATE INDEX IF NOT EXISTS idx_doctor_run ON doctor_log(run_id);`); err != nil {
 		db.Close()
 		return nil, err
 	}
+	// W4.5 迁移：老库补 setting_json 列（列已存在时报错忽略）。
+	// v0.1 未发布，无真实快照需要迁移；旧行 setting_json=NULL 视为无快照。
+	_, _ = db.Exec(`ALTER TABLE sysproxy_snapshot ADD COLUMN setting_json TEXT`)
 
 	s := &Store{
 		db:     db,
@@ -296,27 +300,31 @@ func (s *Store) LastGood() (map[string]LastGoodEntry, error) {
 
 // --- 快照（sysproxy 接管前的原值，单行表；崩溃对账用） ---
 
-// SaveSnapshot 持久化接管前原值（同步，低频操作）。
-func (s *Store) SaveSnapshot(proxyServer, pacURL string) error {
-	_, err := s.db.Exec(`INSERT INTO sysproxy_snapshot(id, proxy_server, pac_url, taken_at)
-VALUES(1, ?, ?, ?)
-ON CONFLICT(id) DO UPDATE SET proxy_server=excluded.proxy_server,
-  pac_url=excluded.pac_url, taken_at=excluded.taken_at`,
-		proxyServer, pacURL, time.Now().UnixMilli())
+// SaveSnapshot 持久化接管前原值（同步，低频操作）。W4.5 起存完整
+// Setting 的 JSON（含 ProxyEnabled/ProxyOverride/AutoDetect）；
+// 存储层不 import sysproxy，序列化由调用方完成。
+func (s *Store) SaveSnapshotJSON(settingJSON string) error {
+	_, err := s.db.Exec(`INSERT INTO sysproxy_snapshot(id, proxy_server, pac_url, taken_at, setting_json)
+VALUES(1, '', '', ?, ?)
+ON CONFLICT(id) DO UPDATE SET taken_at=excluded.taken_at, setting_json=excluded.setting_json`,
+		time.Now().UnixMilli(), settingJSON)
 	return err
 }
 
-// LoadSnapshot 读快照；不存在返回 ok=false。
-func (s *Store) LoadSnapshot() (proxyServer, pacURL string, ok bool, err error) {
-	err = s.db.QueryRow(`SELECT proxy_server, pac_url FROM sysproxy_snapshot WHERE id=1`).
-		Scan(&proxyServer, &pacURL)
+// LoadSnapshotJSON 读快照 JSON；不存在或为 W4.5 之前的旧行返回 ok=false。
+func (s *Store) LoadSnapshotJSON() (settingJSON string, ok bool, err error) {
+	err = s.db.QueryRow(`SELECT setting_json FROM sysproxy_snapshot WHERE id=1`).
+		Scan(&settingJSON)
 	if err == sql.ErrNoRows {
-		return "", "", false, nil
+		return "", false, nil
 	}
 	if err != nil {
-		return "", "", false, err
+		return "", false, err
 	}
-	return proxyServer, pacURL, true, nil
+	if settingJSON == "" {
+		return "", false, nil // 旧行（升级前遗留），视为无快照
+	}
+	return settingJSON, true, nil
 }
 
 // DeleteSnapshot 删除快照（恢复完成后调用）。

@@ -147,29 +147,41 @@ func TestSnapshotRoundtrip(t *testing.T) {
 	}
 	defer s.Close()
 
-	if _, _, ok, _ := s.LoadSnapshot(); ok {
+	if _, ok, _ := s.LoadSnapshotJSON(); ok {
 		t.Fatal("初始应无快照")
 	}
-	if err := s.SaveSnapshot("192.168.1.1:8888", "http://old/pac"); err != nil {
+	// 完整 Setting JSON（W4.5：含启用位/bypass/WPAD）
+	settingJSON := `{"ProxyServer":"192.168.1.1:8888","ProxyEnabled":true,` +
+		`"ProxyOverride":"localhost;127.0.0.1;*. corp","PACURL":"http://old/pac","AutoDetect":false}`
+	if err := s.SaveSnapshotJSON(settingJSON); err != nil {
 		t.Fatal(err)
 	}
-	ps, pac, ok, err := s.LoadSnapshot()
+	got, ok, err := s.LoadSnapshotJSON()
 	if err != nil || !ok {
 		t.Fatalf("快照读回: ok=%v err=%v", ok, err)
 	}
-	if ps != "192.168.1.1:8888" || pac != "http://old/pac" {
-		t.Fatalf("快照内容错: %q %q", ps, pac)
+	if got != settingJSON {
+		t.Fatalf("快照内容错: %q", got)
 	}
-	// 覆盖（同一 id 单行）
-	s.SaveSnapshot("", "")
-	ps2, pac2, ok2, _ := s.LoadSnapshot()
-	if !ok2 || ps2 != "" || pac2 != "" {
-		t.Fatalf("覆盖失败: %q %q %v", ps2, pac2, ok2)
+	// 覆盖（同一 id 单行）+ 空串覆盖
+	if err := s.SaveSnapshotJSON(""); err != nil {
+		t.Fatal(err)
+	}
+	got2, ok2, _ := s.LoadSnapshotJSON()
+	if ok2 || got2 != "" {
+		t.Fatalf("空串覆盖后应视为无快照: %q %v", got2, ok2)
+	}
+	// 再写一行有效值，走覆盖更新路径
+	if err := s.SaveSnapshotJSON("{}"); err != nil {
+		t.Fatal(err)
+	}
+	if got3, ok3, _ := s.LoadSnapshotJSON(); !ok3 || got3 != "{}" {
+		t.Fatalf("覆盖失败: %q %v", got3, ok3)
 	}
 	if err := s.DeleteSnapshot(); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, ok3, _ := s.LoadSnapshot(); ok3 {
+	if _, ok4, _ := s.LoadSnapshotJSON(); ok4 {
 		t.Fatal("删除后应无快照")
 	}
 }

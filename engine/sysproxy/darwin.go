@@ -56,21 +56,43 @@ func currentOS() (Setting, error) {
 			}
 		}
 	}
-	if out, err := exec.Command("networksetup", "-getwebproxy", svc).Output(); err == nil {
+	// web 优先，web 未启用再看 secure（两者通常同值；单字段表达的
+	// 已知限制记录于 W4.5——mac 集成测试不进 CI，真机验收覆盖）
+	for _, args := range [][]string{{"-getwebproxy", "-setwebproxy"}, {"-getsecurewebproxy", "-setsecurewebproxy"}} {
+		out, err := exec.Command("networksetup", args[0], svc).Output()
+		if err != nil {
+			continue
+		}
 		txt := string(out)
-		if strings.Contains(txt, "Enabled: Yes") {
-			for _, l := range strings.Split(txt, "\n") {
-				if h, ok := strings.CutPrefix(strings.TrimSpace(l), "Server: "); ok {
-					for _, l2 := range strings.Split(txt, "\n") {
-						if p, ok2 := strings.CutPrefix(strings.TrimSpace(l2), "Port: "); ok2 {
-							s.ProxyServer = fmt.Sprintf("%s:%s", h, p)
-							break
-						}
+		if !strings.Contains(txt, "Enabled: Yes") {
+			continue
+		}
+		for _, l := range strings.Split(txt, "\n") {
+			if h, ok := strings.CutPrefix(strings.TrimSpace(l), "Server: "); ok {
+				for _, l2 := range strings.Split(txt, "\n") {
+					if p, ok2 := strings.CutPrefix(strings.TrimSpace(l2), "Port: "); ok2 {
+						s.ProxyServer = fmt.Sprintf("%s:%s", h, p)
+						s.ProxyEnabled = true
+						break
 					}
-					break
 				}
+				break
 			}
 		}
+		if s.ProxyServer != "" {
+			break
+		}
+	}
+	// bypass 列表（多行域名 → ";" 分隔，与 Windows ProxyOverride 同构）
+	if out, err := exec.Command("networksetup", "-getproxybypassdomains", svc).Output(); err == nil {
+		var doms []string
+		for _, l := range strings.Split(string(out), "\n") {
+			l = strings.TrimSpace(l)
+			if l != "" && !strings.Contains(l, "aren't any") {
+				doms = append(doms, l)
+			}
+		}
+		s.ProxyOverride = strings.Join(doms, ";")
 	}
 	return s, nil
 }
@@ -95,8 +117,21 @@ func applyOS(s Setting) error {
 	if out, err := exec.Command("networksetup", "-setsecurewebproxy", svc, hostOf(s.ProxyServer), portOf(s.ProxyServer)).CombinedOutput(); err != nil {
 		return fmt.Errorf("setsecurewebproxy: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
+	// bypass 列表（";" 分隔 → 展开为多参数；空 = 清空列表）
+	if doms := splitOverride(s.ProxyOverride); len(doms) > 0 {
+		exec.Command("networksetup", append([]string{"-setproxybypassdomains", svc}, doms...)...).Run()
+	} else {
+		exec.Command("networksetup", "-setproxybypassdomains", svc).Run()
+	}
 	exec.Command("networksetup", "-setautoproxystate", svc, "off").Run()
 	return nil
+}
+
+func splitOverride(ov string) []string {
+	if ov == "" {
+		return nil
+	}
+	return strings.Split(ov, ";")
 }
 
 func clearOS() error {
