@@ -15,6 +15,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -43,6 +44,8 @@ type Event struct {
 	DialErr   error     // 上游连接失败原因（nil = 成功）
 	DialMS    float64   // 上游连接耗时
 	Rx, Tx    int64     // 下行 / 上行字节总数
+	CopyErr   string    // 双向转发阶段的首个非 EOF 错误摘要（空 = 干净结束）
+	Duration  float64   // 隧道存活毫秒数（200 回写起 → 结束）
 	StartedAt time.Time // 隧道发起时刻
 }
 
@@ -117,23 +120,29 @@ func (s *Server) handle(conn net.Conn) {
 
 	// 双向转发。br 可能已缓冲客户端在等 200 期间预发的数据
 	// （TLS 客户端激进时不等 200 就发 ClientHello）——从 br 起拷贝即覆盖。
+	started := time.Now()
 	txBuf := s.getBuf()
 	rxBuf := s.getBuf()
 	var wg sync.WaitGroup
+	var upN, downN int64
+	var upErr, downErr error
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ev.Tx, _ = io.CopyBuffer(up, br, txBuf)
+		upN, upErr = io.CopyBuffer(up, br, txBuf)
 		s.putBuf(txBuf)
 		if tc, ok := up.(*net.TCPConn); ok {
 			tc.CloseWrite() // 半关闭：让对端感知 EOF
 		}
 	}()
-	ev.Rx, _ = io.CopyBuffer(conn, up, rxBuf)
+	downN, downErr = io.CopyBuffer(conn, up, rxBuf)
 	s.putBuf(rxBuf)
-	// 等上行 goroutine 退出后再 emit，保证 Rx/Tx 完整。
+	// 等上行 goroutine 退出后再 emit，保证 Rx/Tx 完整（WaitGroup 建立 happens-before）。
 	// 上行退出依赖 up 读到 EOF/FIN——先关 down 侧不阻塞 up 读；客户端关连接后 br 返回 EOF。
 	wg.Wait()
+	ev.Tx, ev.Rx = upN, downN
+	ev.Duration = msSince(started)
+	ev.CopyErr = firstCopyErr(upErr, downErr)
 	s.emit(ev)
 }
 
@@ -168,4 +177,25 @@ func writePlain(conn net.Conn, code int, msg string) {
 
 func msSince(t0 time.Time) float64 {
 	return float64(time.Since(t0).Microseconds()) / 1000
+}
+
+// firstCopyErr 返回首个值得上报的转发错误（CopyBuffer 吞 EOF，非 nil 即异常）。
+// use of closed connection 是我方 CloseWrite/断链的伴随噪声，同样略去。
+func firstCopyErr(errs ...error) string {
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		var msg string
+		if opErr, ok := err.(*net.OpError); ok {
+			msg = opErr.Err.Error()
+		} else {
+			msg = err.Error()
+		}
+		if strings.Contains(msg, "use of closed network connection") {
+			continue
+		}
+		return msg
+	}
+	return ""
 }

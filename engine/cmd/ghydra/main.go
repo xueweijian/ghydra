@@ -38,9 +38,13 @@ import (
 	"time"
 
 	"github.com/xueweijian/ghydra/engine/bootstrap"
+	"path/filepath"
+
 	"github.com/xueweijian/ghydra/engine/proxy"
 	"github.com/xueweijian/ghydra/engine/rules"
+	"github.com/xueweijian/ghydra/engine/sched"
 	"github.com/xueweijian/ghydra/engine/sni"
+	"github.com/xueweijian/ghydra/engine/store"
 )
 
 func main() {
@@ -58,6 +62,8 @@ func main() {
 		loadtestCmd(os.Args[2:])
 	case "serve":
 		serveCmd(os.Args[2:])
+	case "status":
+		statusCmd(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -71,43 +77,100 @@ func usage() {
 	fmt.Fprint(os.Stderr, `ghydra (M1 dev)
 
 用法:
-  ghydra serve [--listen ADDR] [--backlog N]     CONNECT 代理服务（通道 A 数据面）
-  ghydra bench [--json]                          四级自举链探测报告
-  ghydra poc [--listen ADDR] [--rewrite-sni N]   裸 SNI 转发器（调试工具）
-  ghydra loadtest [--concurrency N] [--rounds M] 并发压测（内置假上游 + 转发器 + 客户端）
+  ghydra serve [--listen ADDR] [--scheduler on|off]   CONNECT 代理服务（通道 A 数据面）
+  ghydra status                                     last_good 持久化观察口
+  ghydra bench [--json]                             四级自举链探测报告
+  ghydra poc [--listen ADDR] [--rewrite-sni N]      裸 SNI 转发器（调试工具）
+  ghydra loadtest [--mode sni|connect] [--concurrency N] [--rounds M]  并发压测
 `)
 }
 
-// serveCmd 启动 CONNECT 代理（M1 W1 内核）。
+// statusCmd 打印 SQLite last_good（调度器池状态的持久化投影）。
+// 实时池快照看 serve 日志（[sched] 前缀）；W4 doctor 会给出完整视图。
+func statusCmd(args []string) {
+	fs := flag.NewFlagSet("status", flag.ExitOnError)
+	dbPath := fs.String("db", defaultDBPath(), "SQLite 路径")
+	_ = fs.Parse(args)
+
+	if *dbPath == "" {
+		fmt.Println("未配置数据库路径（HOME 不可用）")
+		return
+	}
+	st, err := store.Open(*dbPath)
+	if err != nil {
+		log.Fatalf("打开数据库失败: %v", err)
+	}
+	defer st.Close()
+	good, err := st.LastGood()
+	if err != nil {
+		log.Fatalf("读取失败: %v", err)
+	}
+	if len(good) == 0 {
+		fmt.Println("暂无 last_good 记录（serve 运行并产生流量后生成）")
+		return
+	}
+	fmt.Printf("%-40s %-22s %8s %9s  %s\n", "DOMAIN", "IP", "SCORE", "RTT_MS", "UPDATED")
+	for host, e := range good {
+		fmt.Printf("%-40s %-22s %8.3f %9.0f  %s\n",
+			host, e.IP, e.Score, e.RTTMS, e.Updated.Format("01-02 15:04"))
+	}
+}
+
+// serveCmd 启动 CONNECT 代理（M1 数据面）。
 //
-// W1 阶段：命中加速域名的连接直连域名本身（系统 DNS）——内核与规则
-// 已就位，加速效果待 W2 IP 调度器接入 Select 后生效。
+// W2 起 --scheduler=on（默认）：命中加速域名的连接由 IP 调度器择优
+// （EWMA + 五态状态机 + 粘性 + 熔断），候选来自自举链 meta/DoH、
+// SQLite last_good 恢复与池枯竭 DoH 补充；真实流量成败即探测信号。
+// --scheduler=off 回退 W1 行为（直连域名，系统 DNS）——A/B 对照与
+// 故障逃生通道。
 func serveCmd(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	listen := fs.String("listen", "127.0.0.1:9801", "本地监听地址（仅 IPv4 回环）")
 	backlog := fs.Int("backlog", 4096, "listen backlog")
 	timeout := fs.Duration("dial-timeout", proxy.DefaultDialTimeout, "上游连接超时")
+	schedOn := fs.Bool("scheduler", true, "IP 调度器（off = W1 直连行为，对照/逃生）")
+	dbPath := fs.String("db", defaultDBPath(), "SQLite 路径（空 = 不持久化）")
 	_ = fs.Parse(args)
 
 	m := rules.New(rules.DefaultDomains)
+
+	var sel proxy.UpstreamSelector = proxy.SelectorFunc(func(host string) (string, bool) {
+		if m.Match(host) {
+			return net.JoinHostPort(host, "443"), true
+		}
+		return "", false
+	})
+
+	var (
+		reportEvent func(proxy.Event)
+		closeAll    func()
+	)
+	if *schedOn {
+		sel2, shutdown, err := startScheduler(m, *dbPath)
+		if err != nil {
+			log.Fatalf("调度器启动失败: %v", err)
+		}
+		sel, reportEvent, closeAll = sel2, sel2.ReportEvent, shutdown
+		defer closeAll()
+	}
+
 	var conns atomic.Int64
 	srv := &proxy.Server{
-		Selector: proxy.SelectorFunc(func(host string) (string, bool) {
-			if m.Match(host) {
-				// W1：暂无调度器，直连域名本身；W2 起返回择优 IP:443
-				return net.JoinHostPort(host, "443"), true
-			}
-			return "", false
-		}),
+		Selector:    sel,
 		DialTimeout: *timeout,
 		OnEvent: func(e proxy.Event) {
 			n := conns.Add(1)
 			status := "OK"
 			if e.DialErr != nil {
 				status = e.DialErr.Error()
+			} else if e.CopyErr != "" {
+				status = "copy:" + e.CopyErr
 			}
 			log.Printf("[conn#%d] %s -> %s accel=%t dial=%.1fms rx=%dB tx=%dB %s",
 				n, e.Host, e.Target, e.Accel, e.DialMS, e.Rx, e.Tx, status)
+			if reportEvent != nil {
+				reportEvent(e) // 调度器信号（非阻塞；池外目标自动忽略）
+			}
 		},
 	}
 
@@ -123,13 +186,121 @@ func serveCmd(args []string) {
 		ln.Close()
 	}()
 
-	log.Printf("ghydra serve 已启动: %s | 加速域名 %d 条 | backlog %d | dial-timeout %s",
-		ln.Addr().String(), len(m.Domains()), *backlog, *timeout)
+	log.Printf("ghydra serve 已启动: %s | 加速域名 %d 条 | scheduler=%t | backlog %d",
+		ln.Addr().String(), len(m.Domains()), *schedOn, *backlog)
 	log.Printf("将系统代理指向 %s 即可使用（一键接管 = W3 ghydra on）", ln.Addr().String())
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, net.ErrClosed) {
 		log.Fatalf("serve 退出: %v", err)
 	}
 	log.Printf("已退出，共服务 %d 条连接", conns.Load())
+}
+
+// startScheduler 装配 M1-W2 调度器：候选喂数（自举链 + last_good
+// 恢复）→ 主动探测（拨号函数）→ 池枯竭 DoH 兜底 → 后台刷新 →
+// 事件管道。返回 shutdown 必须在退出时调用（flush 持久化）。
+func startScheduler(m *rules.Matcher, dbPath string) (*sched.Selector, func(), error) {
+	cfg := sched.DefaultConfig()
+	sc := sched.New(cfg)
+	sc.Logf = func(f string, a ...any) { log.Printf(f, a...) }
+
+	// 持久化（可选：dbPath 空 = 纯内存）
+	var st *store.Store
+	if dbPath != "" {
+		s, err := store.Open(dbPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("sqlite: %w", err)
+		}
+		st = s
+		sc.OnActive = func(host, addr string, score, rtt float64) {
+			st.UpdateLastGood(host, addr, score, rtt) // 非阻塞
+		}
+	}
+
+	// 主动探测拨号：TCP-only（设计 §1.3，FastGithub 同款）
+	sc.Dial = func(addr string, timeout time.Duration) error {
+		c, err := net.DialTimeout("tcp", addr, timeout)
+		if err != nil {
+			return err
+		}
+		c.Close()
+		return nil
+	}
+
+	// 池枯竭兜底：DoH 解析该域名（bootstrap 的 per-host 能力）
+	resolver := bootstrap.New()
+	sc.Resolve = func(host string) ([]string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
+		defer cancel()
+		return resolver.ResolveHost(ctx, host)
+	}
+
+	// ① 候选喂数：DoH 解析（就近可达 IP，实测质量最高）+ 自举链
+	// （meta 网段 + last-good 缓存）。meta 老段在本网络可能整段不可达
+	// ——Preflight 预筛保证用户连接不背死 IP 的 dial 成本。
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		t0 := time.Now()
+
+		// 1a. DoH 解析 github.com（223 系就近结果，立即可用）
+		var dohIPs []string
+		if ips, err := resolver.ResolveHost(ctx, "github.com"); err == nil {
+			for _, ip := range ips {
+				dohIPs = append(dohIPs, net.JoinHostPort(ip, "443"))
+			}
+		}
+		// 1b. 自举链（meta 网段 + 缓存 + 种子）
+		res := resolver.Resolve(ctx)
+		metaIPs := make([]string, 0, len(res.IPs))
+		for _, ip := range res.IPs {
+			metaIPs = append(metaIPs, net.JoinHostPort(ip, "443"))
+		}
+		if n := sc.AddCandidates("github.com", append(dohIPs, metaIPs...)); n > 0 {
+			log.Printf("[sched] 候选入池 github.com: +%d（DoH %d + %s %d，%.1fs）",
+				n, len(dohIPs), res.Source, len(metaIPs), time.Since(t0).Seconds())
+		}
+		// 1c. 并行预筛：死 IP 直接熔断，不进用户连接路径
+		if n := sc.Preflight("github.com"); n > 0 {
+			log.Printf("[sched] Preflight 预筛 github.com: %d 候选完成", n)
+		}
+	}()
+
+	// ② last_good 恢复（经主动验证后放行）
+	if st != nil {
+		if good, err := st.LastGood(); err == nil {
+			for host, e := range good {
+				if !m.Match(host) {
+					continue // 规则外域名不恢复（防规则变更残留）
+				}
+				n := sc.AddCandidates(host, []string{e.IP})
+				if n > 0 {
+					go sc.ProbeBest(host, 1)
+					log.Printf("[sched] last_good 恢复 %s -> %s (score=%.3f rtt=%.0fms)",
+						host, e.IP, e.Score, e.RTTMS)
+				}
+			}
+		}
+	}
+
+	// ③ 后台刷新（活跃域名 Active top5，30s 一轮）
+	stop := make(chan struct{})
+	sc.StartRefreshLoop(30*time.Second, 5, stop)
+
+	shutdown := func() {
+		close(stop)
+		if st != nil {
+			st.Close() // flush 在途写
+		}
+	}
+	return sched.NewSelector(sc, m), shutdown, nil
+}
+
+func defaultDBPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".ghydra", "ghydra.db")
 }
 
 func benchCmd(args []string) {

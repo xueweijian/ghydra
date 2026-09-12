@@ -258,7 +258,33 @@ var dohClient = &http.Client{
 
 // fetchDoH 请求一个 DoH JSON 端点并提取 A 记录。
 func (r *Resolver) fetchDoH(ctx context.Context, endpoint string) ([]string, error) {
-	u := endpoint + "?name=" + url.QueryEscape(r.DoHName) + "&type=A"
+	return r.fetchDoHHost(ctx, endpoint, r.DoHName)
+}
+
+// ResolveHost 运行时解析任意域名的 A 记录（DoH 轮询，M1-W2 调度器
+// 池枯竭补充用）。端点复用自举链的 DoH 配置，直连不走代理。
+func (r *Resolver) ResolveHost(ctx context.Context, host string) ([]string, error) {
+	if host == "" {
+		return nil, fmt.Errorf("empty host")
+	}
+	var lastErr error
+	for _, ep := range r.DoHEndpoints {
+		ips, err := r.fetchDoHHost(ctx, ep, host)
+		if err == nil && len(ips) > 0 {
+			return ips, nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no A records")
+	}
+	return nil, lastErr
+}
+
+func (r *Resolver) fetchDoHHost(ctx context.Context, endpoint, name string) ([]string, error) {
+	u := endpoint + "?name=" + url.QueryEscape(name) + "&type=A"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
