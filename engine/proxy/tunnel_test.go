@@ -389,7 +389,7 @@ func TestTunnelNoPortDefaults443(t *testing.T) {
 	}
 	defer c.Close()
 	c.SetDeadline(time.Now().Add(5 * time.Second))
-	fmt.Fprint(c, "CONNECT localhost\r\nHost: localhost\r\n\r\n")
+	fmt.Fprint(c, "CONNECT 127.0.0.1\r\nHost: 127.0.0.1\r\n\r\n")
 	br := bufio.NewReader(c)
 	line, _ := br.ReadString('\n')
 	if !contains([]byte(line), "200") {
