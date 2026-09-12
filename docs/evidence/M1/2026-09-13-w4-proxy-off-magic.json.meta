@@ -1,5 +1,0 @@
-本文件对应 /tmp/doctor-valid-proxy-3.json（2026-09-13，用户确认关闭魔法）。
-原始 JSON 未直接复制到仓库；如需归档，运行：
-ghydra doctor --mode proxy --proxy http://127.0.0.1:19802 --timeout 10s --db ~/.ghydra/ghydra.db --json > docs/evidence/M1/2026-09-13-w4-proxy-off-magic.json
-
-修复 TLS SNI 预筛后结果：五场景 5/5；SSH 观测 2/2；最终有效 IP 20.205.243.166:443，网页/登录/clone/push/release 均通过。

@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -25,6 +29,13 @@ func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL string) func
 		cfg.Repo = repo
 		cfg.ProxyURL = proxyURL
 		r := probe.New(cfg)
+		// 先确认本地代理监听并能返回 /status。on 启动时 doctor
+		// goroutine 与 serve 并行，不能把启动瞬间的 connection refused
+		// 误记成代理故障。
+		if err := waitDoctorProxy(proxyURL, 15*time.Second); err != nil {
+			log.Printf("[doctor-loop] 代理尚未就绪: %v", err)
+			return
+		}
 		// direct 可能遇到黑洞并耗满超时；proxy 必须拿到独立预算，
 		// 否则每小时双列数据会被前一组污染。
 		ctxDirect, cancelDirect := context.WithTimeout(context.Background(), cfg.Timeout+3*time.Second)
@@ -68,4 +79,25 @@ func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL string) func
 		close(stop)
 		done.Wait()
 	}
+}
+
+func waitDoctorProxy(raw string, timeout time.Duration) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("代理地址无效: %q", raw)
+	}
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: time.Second, Transport: &http.Transport{Proxy: nil}}
+	for time.Now().Before(deadline) {
+		resp, err := client.Get("http://" + u.Host + "/status")
+		if err == nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("等待 %s/status 超时", u.Host)
 }
