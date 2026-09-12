@@ -98,6 +98,8 @@ func (d *Downloader) Get(ctx context.Context, rawURL, dst string) (Result, error
 	cur := "A"
 	var offset int64
 	switches := 0
+	first := true // 吞吐启发只跑首段：续传段重跑会造成 A 完成后仍被
+	// 判 slow → 再切 B → 乒乓（Windows 定时器粒度下实测复现）
 
 	for {
 		fetch := d.a
@@ -112,7 +114,8 @@ func (d *Downloader) Get(ctx context.Context, rawURL, dst string) (Result, error
 		}
 		// 一致性期望（首段之后的段必须对上首段的声明，防 CDN 缓存错配）
 		seg, total, etag, slow, err := d.stream(ctx, fetch, rawURL, from, f, offset,
-			cur == "A" && d.b != nil, res.TotalBytes, res.ETag)
+			first && cur == "A" && d.b != nil, res.TotalBytes, res.ETag)
+		first = false
 		seg.Channel = name
 		seg.StartOff = offset
 		if err != nil && seg.WhyOut == "" {
@@ -226,7 +229,11 @@ func (d *Downloader) stream(ctx context.Context, fetch Fetcher, rawURL string, f
 				probeBudget -= int64(n)
 				if probeBytes >= d.cfg.ProbeBytes {
 					// 前 N 字节窗口闭合：判慢即中断当前流（切道续传）
-					rate := bps(probeBytes, ms(time.Since(probeStart)))
+					elapsed := ms(time.Since(probeStart))
+					if elapsed < 1 {
+						elapsed = 1 // Windows 定时器粒度下快速窗口可能测得 ~0ms
+					}
+					rate := bps(probeBytes, elapsed)
 					seg.RateBPS = rate
 					if total > d.cfg.BigFile && rate < d.cfg.ProbeMinBPS {
 						seg.WhyOut = fmt.Sprintf("前%dKB=%.0fKB/s 低于阈值", d.cfg.ProbeBytes>>10, rate/1024)

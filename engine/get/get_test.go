@@ -139,7 +139,7 @@ func runGet(t *testing.T, cfg Config, rawURL string, a, b Fetcher) (Result, []by
 	d := New(cfg, a, b)
 	res, err := d.Get(context.Background(), rawURL, dst)
 	if err != nil {
-		t.Fatalf("Get: %v", err)
+		t.Fatalf("Get: %v\n段轨迹: %+v", err, res.Segments)
 	}
 	got, err := os.ReadFile(dst)
 	if err != nil {
