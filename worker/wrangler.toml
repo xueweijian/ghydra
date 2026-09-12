@@ -1,0 +1,18 @@
+# GHydra B 通道 Worker 模板
+# 部署：dashboard 一键 Deploy（见 README）或 `wrangler deploy`
+# 自定义域（大陆可达性，M2-R1）：routes + custom_domain，或 dashboard 绑定
+name = "ghydra-worker"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# 部署配置（W3-D 实测实例：1ciyuan.cn）
+# account_id 不硬编码：走 CLOUDFLARE_ACCOUNT_ID 环境变量（模板用户同理，
+# wrangler 会用 token 关联的账号或提示选择）
+routes = [
+  { pattern = "gh.1ciyuan.cn", custom_domain = true }
+]
+
+[vars]
+# WHITELIST = "mirror.example.com"   # 逗号分隔增补 host（只增不删默认集）
+# TOKEN = "change-me"                # 设置后要求 ?token= 或 Bearer 鉴权
+CACHE = "on"

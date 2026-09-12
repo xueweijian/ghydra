@@ -21,7 +21,7 @@ func VerdictFromReports(proxyRep, directRep *probe.Report) Verdict {
 	if proxyRep == nil || proxyRep.CoveredTotal == 0 {
 		return VerdictNone // 无数据
 	}
-	if coveredHealthy(proxyRep) {
+	if CoveredHealthy(proxyRep) {
 		return VerdictHealthy
 	}
 
@@ -31,7 +31,7 @@ func VerdictFromReports(proxyRep, directRep *probe.Report) Verdict {
 	}
 
 	// 对照组活 = 网络到 GitHub 是通的，锅在 ghydra 本地 → 不切道
-	if directRep != nil && directRep.CoveredTotal > 0 && coveredHealthy(directRep) {
+	if directRep != nil && directRep.CoveredTotal > 0 && CoveredHealthy(directRep) {
 		return VerdictUnclear
 	}
 
@@ -59,7 +59,8 @@ func VerdictFromReports(proxyRep, directRep *probe.Report) Verdict {
 	}
 }
 
-func coveredHealthy(r *probe.Report) bool {
+// CoveredHealthy 覆盖场景全过（导出：doctor_loop 判定 B 列健康用）。
+func CoveredHealthy(r *probe.Report) bool {
 	return r.CoveredPassed == r.CoveredTotal && r.CoveredTotal > 0
 }
 

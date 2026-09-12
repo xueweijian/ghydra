@@ -20,12 +20,24 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/xueweijian/ghydra/engine/bootstrap"
 	"github.com/xueweijian/ghydra/engine/channel"
 	"github.com/xueweijian/ghydra/engine/get"
 	"github.com/xueweijian/ghydra/engine/rules"
 
 	"github.com/xueweijian/ghydra/engine/store"
 )
+
+// newBFetcherProd 生产 B 通道接线：DoH 自举解析（W3，消除系统 DNS
+// 单点——真网实证 resolv.conf 被魔法写坏后 B 通道死），系统 DNS 兜底。
+func newBFetcherProd(prefix string) *get.BFetcher {
+	b := get.NewBFetcher(prefix)
+	if b != nil {
+		res := bootstrap.New()
+		b.DNS = &get.BDNS{ResolveHost: res.ResolveHost}
+	}
+	return b
+}
 
 // reorderGetArgs 允许 flag 出现在 URL 前后（get URL -o x ≡ get -o x URL）。
 // Go flag 包遇到首个非 flag 参数即停止解析，这里按参数类型重排后再解析。
@@ -89,7 +101,7 @@ func getCmd(args []string) {
 	// B 通道：CDN 前缀反代（--cdn 空 = A-only）
 	var b get.Fetcher
 	if *cdn != "" {
-		b = get.NewBFetcher(*cdn)
+		b = newBFetcherProd(*cdn)
 	}
 
 	dst := *out
@@ -198,8 +210,8 @@ func printDownloadStats(dbPath string) {
 	}
 	fmt.Println("近 7 天下载速率（Release 验收口径：中位 ≥ 2MB/s）:")
 	for _, s := range stats {
-		fmt.Printf("  通道 %s: %d 段 | 中位 %.2f MB/s | 峰值 %.2f MB/s | 累计 %.1f MB\n",
-			s.Channel, s.Runs, s.MedianBPS/(1<<20), s.MaxBPS/(1<<20), s.TotalMB)
+		fmt.Printf("  通道 %s: %d 段 | 中位 %.2f MB/s | 峰值 %.2f MB/s | 累计 %.1f MB | 失败 %d/%d 段\n",
+			s.Channel, s.Runs, s.MedianBPS/(1<<20), s.MaxBPS/(1<<20), s.TotalMB, s.Failures, s.Attempts)
 	}
 }
 
@@ -212,7 +224,7 @@ func servePlainHTTP(router *channel.Router, m *rules.Matcher, pick func(string) 
 	a := get.NewAFetcher(pick)
 	var b get.Fetcher
 	if cdnPrefix != "" {
-		b = get.NewBFetcher(cdnPrefix)
+		b = newBFetcherProd(cdnPrefix)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 绝对形态（http://host/path）才是代理请求；其余走本地端点

@@ -99,6 +99,7 @@ type Config struct {
 	MinSamples    int           // 统计触发的最小样本数
 	OpenCooldown  time.Duration // Open → HalfOpen 冷却
 	BackoffMax    time.Duration // HalfOpen 探活失败的退避上限（翻倍增长）
+	BHealthTTL    time.Duration // B 探针结果的信任时长（过期回退未知=可切）
 }
 
 // DefaultConfig 实证参数：窗口 12 样本、≥8 样本失败率过半即熔断
@@ -111,6 +112,7 @@ func DefaultConfig() Config {
 		MinSamples:    8,
 		OpenCooldown:  60 * time.Second,
 		BackoffMax:    10 * time.Minute,
+		BHealthTTL:    5 * time.Minute,
 	}
 }
 
@@ -129,6 +131,14 @@ type Router struct {
 	win       []bool // 环形窗口
 	winN      int    // 已填充样本数（< len 时不算失败率）
 	winHead   int
+
+	// B 通道健康信号（W3：trip 前置检查——别往死通道里切）。
+	// bOK=nil 表示未知（从未探过）：不抑制熔断（保持 W1 行为）。
+	bOK         *bool
+	bAt         time.Time
+	bSuppressed int    // 因 B 死而抑制切道的次数
+	bSuppWhy    string // 最近一次抑制的原始判定
+	bSuppAt     time.Time
 }
 
 // New 创建决策器。now 为 nil 用真实时钟。
@@ -193,6 +203,14 @@ func (r *Router) Report(f Flow, ch Name, ok bool) {
 		r.winN++
 	}
 	if r.st == StateClosed && r.winN >= r.cfg.MinSamples && r.failRateLocked() >= r.cfg.FailThreshold {
+		if r.bKnownDeadLocked() {
+			// B 死：切过去也是死（W3 trip 前置检查，与 doctor 路径一致）
+			r.bSuppressed++
+			r.bSuppWhy = "流量失败率 " + pctLocked(r.failRateLocked())
+			r.bSuppAt = r.now()
+			r.resetWindowLocked()
+			return
+		}
 		r.tripLocked("流量失败率 " + pctLocked(r.failRateLocked()))
 	}
 }
@@ -204,6 +222,14 @@ func (r *Router) NotifyDoctor(v Verdict) {
 	st := r.stateLocked()
 	switch v {
 	case VerdictSourceFault, VerdictNetworkFault:
+		if r.bKnownDeadLocked() {
+			// B 探针近期失败：切过去也是死——保持 A，记录抑制
+			// （真实缺陷修复：W1 会盲切进死 B）。
+			r.bSuppressed++
+			r.bSuppWhy = verdictWhy(v)
+			r.bSuppAt = r.now()
+			return
+		}
 		if st == StateHalfOpen {
 			// 探活失败：退避翻倍再回 Open（M2-R4 防抖）
 			r.backoff++
@@ -219,6 +245,27 @@ func (r *Router) NotifyDoctor(v Verdict) {
 		}
 		// VerdictUnclear / VerdictNone：不动状态（对照组也死 = 不是我们的锅）
 	}
+}
+
+// NotifyB 接入 B 通道探针结果（doctor cdn 列）。
+func (r *Router) NotifyB(ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v := ok
+	r.bOK = &v
+	r.bAt = r.now()
+}
+
+// bKnownDeadLocked 近期探针明确失败（未知/过期 = 不抑制）。
+func (r *Router) bKnownDeadLocked() bool {
+	if r.bOK == nil || *r.bOK {
+		return false
+	}
+	ttl := r.cfg.BHealthTTL
+	if ttl <= 0 {
+		ttl = 5 * time.Minute
+	}
+	return r.now().Sub(r.bAt) < ttl
 }
 
 // SetOverride 用户逃生通道。
@@ -238,6 +285,13 @@ type Snapshot struct {
 	TripWhy     string
 	OpenUntil   time.Time
 	BackoffMult int
+
+	// B 通道健康（W3）
+	BOK         *bool     // nil = 未知（未探测）
+	BAt         time.Time // 最近 B 探针时间
+	BSuppressed int       // 因 B 死而抑制切道次数
+	BSuppWhy    string    // 最近一次抑制的原始判定
+	BSuppAt     time.Time // 最近一次抑制时间
 }
 
 func (r *Router) Snapshot() Snapshot {
@@ -251,6 +305,11 @@ func (r *Router) Snapshot() Snapshot {
 		TripWhy:     r.tripWhy,
 		OpenUntil:   r.openUntil,
 		BackoffMult: r.backoff,
+		BOK:         r.bOK,
+		BAt:         r.bAt,
+		BSuppressed: r.bSuppressed,
+		BSuppWhy:    r.bSuppWhy,
+		BSuppAt:     r.bSuppAt,
 	}
 	if r.winN >= r.cfg.MinSamples {
 		s.FailRate = r.failRateLocked()

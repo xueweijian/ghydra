@@ -21,6 +21,7 @@ func doctorCmd(args []string) {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
 	mode := fs.String("mode", "both", "探针模式: direct|proxy|both")
 	proxyAddr := fs.String("proxy", "http://127.0.0.1:9801", "HTTP CONNECT 代理地址")
+	cdnPrefix := fs.String("cdn", "", "B 通道 CDN 前缀（--mode cdn 必填）")
 	dbPath := fs.String("db", defaultDBPath(), "SQLite 路径")
 	repo := fs.String("repo", "xueweijian/ghydra", "用于 clone/push dry-run 的仓库 owner/name")
 	release := fs.String("release", "https://github.com/cli/cli/releases/latest", "Release 测试 URL")
@@ -34,8 +35,8 @@ func doctorCmd(args []string) {
 		doctorReport(*dbPath, *since, *asJSON)
 		return
 	}
-	if *mode != "direct" && *mode != "proxy" && *mode != "both" {
-		log.Fatalf("无效 --mode %q（direct|proxy|both）", *mode)
+	if *mode != "direct" && *mode != "proxy" && *mode != "cdn" && *mode != "both" {
+		log.Fatalf("无效 --mode %q（direct|proxy|cdn|both）", *mode)
 	}
 	if *mode == "proxy" || *mode == "both" {
 		if *proxyAddr == "" {
@@ -45,6 +46,12 @@ func doctorCmd(args []string) {
 
 	cfg := probe.DefaultConfig()
 	cfg.Timeout, cfg.ProxyURL, cfg.Repo, cfg.ReleaseURL = *timeout, *proxyAddr, *repo, *release
+	if *mode == "cdn" {
+		if *cdnPrefix == "" {
+			log.Fatal("cdn 模式必须提供 --cdn 前缀")
+		}
+		cfg.CDNPrefix = *cdnPrefix
+	}
 	runner := probe.New(cfg)
 	// 每个模式各自拿完整预算；否则 direct 黑洞耗尽共享 ctx 后，
 	// both 的 proxy 半边只剩几秒，双列对照会失真。
@@ -57,6 +64,11 @@ func doctorCmd(args []string) {
 	if *mode == "proxy" || *mode == "both" {
 		ctx, cancel := context.WithTimeout(context.Background(), *timeout+3*time.Second)
 		reports = append(reports, runDoctorMode(ctx, runner, probe.ModeProxy))
+		cancel()
+	}
+	if *mode == "cdn" {
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout+3*time.Second)
+		reports = append(reports, runDoctorMode(ctx, runner, probe.ModeCDN))
 		cancel()
 	}
 

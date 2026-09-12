@@ -15,11 +15,14 @@ import (
 	"github.com/xueweijian/ghydra/engine/store"
 )
 
-// startDoctorLoop 每个周期运行一次 direct 对照 + proxy 通道探针。
+// startDoctorLoop 每个周期运行一次 direct 对照 + proxy 通道探针，
+// cdnPrefix 非空时加 B 通道列（W3：Router trip 前置健康检查的数据源）。
 // 首轮立即执行，随后按 interval；interval 必须由 serve 已确定的实际
 // 监听地址传入。notify 可为 nil；非 nil 时每轮把蒸馏判定
 // （channel.Verdict）回调给调用方（serve 的通道决策器）。
-func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL string, notify func(channel.Verdict)) func() {
+// notifyB 回调 B 列健康（nil = 无 B 通道）。
+func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL, cdnPrefix string,
+	notify func(channel.Verdict), notifyB func(bool)) func() {
 	if interval <= 0 || dbPath == "" || proxyURL == "" {
 		return func() {}
 	}
@@ -30,6 +33,7 @@ func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL string, noti
 		cfg.Timeout = 12 * time.Second
 		cfg.Repo = repo
 		cfg.ProxyURL = proxyURL
+		cfg.CDNPrefix = cdnPrefix
 		r := probe.New(cfg)
 		// 先确认本地代理监听并能返回 /status。on 启动时 doctor
 		// goroutine 与 serve 并行，不能把启动瞬间的 connection refused
@@ -47,6 +51,16 @@ func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL string, noti
 		proxy := r.Run(ctxProxy, probe.ModeProxy)
 		cancelProxy()
 		reports := []probe.Report{direct, proxy}
+		// B 通道列：五场景经 CDN 前缀（独立预算；失败也不阻塞判定）
+		if cdnPrefix != "" {
+			ctxCDN, cancelCDN := context.WithTimeout(context.Background(), cfg.Timeout+3*time.Second)
+			cdn := r.Run(ctxCDN, probe.ModeCDN)
+			cancelCDN()
+			reports = append(reports, cdn)
+			if notifyB != nil {
+				notifyB(channel.CoveredHealthy(&cdn))
+			}
+		}
 		st, err := store.Open(dbPath)
 		if err != nil {
 			log.Printf("[doctor-loop] 打开 SQLite 失败: %v", err)

@@ -282,7 +282,8 @@ func serveCmd(args []string) {
 
 	var stopDoctor func()
 	if *doctorInterval > 0 && *dbPath != "" {
-		stopDoctor = startDoctorLoop(*doctorInterval, *dbPath, *doctorRepo, "http://"+ln.Addr().String(), chRouter.NotifyDoctor)
+		stopDoctor = startDoctorLoop(*doctorInterval, *dbPath, *doctorRepo,
+			"http://"+ln.Addr().String(), *cdn, chRouter.NotifyDoctor, chRouter.NotifyB)
 		defer stopDoctor()
 	}
 

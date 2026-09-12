@@ -30,6 +30,9 @@ type Mode string
 const (
 	ModeDirect Mode = "direct"
 	ModeProxy  Mode = "proxy"
+	// ModeCDN 经 B 通道 CDN 前缀探测（W3：M2-R1 对策——trip 前要知道
+	// B 活不活，别往死通道里切）。请求 URL 改写为 cdnPrefix+原URL。
+	ModeCDN Mode = "cdn"
 )
 
 // Class 是 doctor 的基础根因类别。
@@ -51,6 +54,7 @@ const (
 type Config struct {
 	Timeout    time.Duration
 	ProxyURL   string // 例如 http://127.0.0.1:9801；ModeDirect 忽略
+	CDNPrefix  string // B 通道 CDN 前缀（gh-proxy 协议）；ModeCDN 必填
 	Repo       string // owner/name；clone/push dry-run 使用
 	ReleaseURL string
 	BodyLimit  int64
@@ -158,6 +162,8 @@ func (r *Runner) Run(ctx context.Context, mode Mode) Report {
 
 	// 七个子探针相互独立，并发启动：黑洞网络不能让 doctor 串行
 	// 等待；每个 HTTP/TCP 检查都能获得完整的 cfg.Timeout 预算。
+	// ModeCDN 只跑 HTTP 五场景（B 通道是 HTTP 反代，SSH 不适用）。
+	isCDN := mode == ModeCDN
 	endpoints := r.httpEndpoints()
 	httpChecks := make([]Check, len(endpoints))
 	sshChecks := make([]Check, 2)
@@ -171,20 +177,24 @@ func (r *Runner) Run(ctx context.Context, mode Mode) Report {
 			httpChecks[i] = r.runHTTP(ctx, mode, ep)
 		}(i, ep)
 	}
-	for i := range sshChecks {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			sshChecks[i] = r.runTCP(ctx, mode, "ssh", sshNames[i], sshTargets[i])
-		}(i)
+	if !isCDN {
+		for i := range sshChecks {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				sshChecks[i] = r.runTCP(ctx, mode, "ssh", sshNames[i], sshTargets[i])
+			}(i)
+		}
 	}
 	wg.Wait()
 	for i, ep := range endpoints {
 		c := httpChecks[i]
 		rep.Scenarios = append(rep.Scenarios, ScenarioReport{Scenario: ep.Scenario, OK: c.OK, Checks: []Check{c}})
 	}
-	sshOK := sshChecks[0].OK && sshChecks[1].OK
-	rep.Scenarios = append(rep.Scenarios, ScenarioReport{Scenario: "ssh", OK: sshOK, Checks: sshChecks})
+	if !isCDN {
+		sshOK := sshChecks[0].OK && sshChecks[1].OK
+		rep.Scenarios = append(rep.Scenarios, ScenarioReport{Scenario: "ssh", OK: sshOK, Checks: sshChecks})
+	}
 	rep.DurationMS = elapsedMS(started)
 	for _, s := range rep.Scenarios {
 		rep.Total++
@@ -265,6 +275,12 @@ func (r *Runner) client(mode Mode) (*http.Client, error) {
 		ResponseHeaderTimeout: r.cfg.Timeout,
 		IdleConnTimeout:       10 * time.Second,
 	}
+	if mode == ModeCDN {
+		if r.cfg.CDNPrefix == "" {
+			return nil, fmt.Errorf("未提供 CDN 前缀（ModeCDN 必填）")
+		}
+		// CDN 侧客户端与 direct 同构（不走代理）；URL 改写在 runHTTP。
+	}
 	if mode == ModeProxy {
 		if r.cfg.ProxyURL == "" {
 			return nil, fmt.Errorf("未提供 HTTP 代理地址")
@@ -342,7 +358,12 @@ func (r *Runner) runHTTP(ctx context.Context, mode Mode, ep Endpoint) Check {
 	}
 	requestCtx, cancel := context.WithTimeout(httptrace.WithClientTrace(ctx, ct), r.cfg.Timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, ep.URL, nil)
+	reqURL := ep.URL
+	if mode == ModeCDN {
+		// gh-proxy 协议：完整目标 URL 拼接在 CDN 前缀后
+		reqURL = r.cfg.CDNPrefix + ep.URL
+	}
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		c.Error = err.Error()
 		c.Class = ClassUnknown

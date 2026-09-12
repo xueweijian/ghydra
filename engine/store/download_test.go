@@ -61,6 +61,12 @@ func TestAppendDownloadAndStats(t *testing.T) {
 	if byCh["A"].Runs != 1 || byCh["B"].Runs != 1 {
 		t.Fatalf("Runs: %+v", byCh)
 	}
+	if byCh["A"].Attempts != 1 || byCh["A"].Failures != 0 {
+		t.Fatalf("A 尝试/失败（切道段不算失败）: %+v", byCh["A"])
+	}
+	if byCh["B"].Attempts != 1 || byCh["B"].Failures != 0 {
+		t.Fatalf("B 尝试/失败: %+v", byCh["B"])
+	}
 	if byCh["B"].MedianBPS != 8<<20 {
 		t.Fatalf("B 中位速率: %v", byCh["B"].MedianBPS)
 	}

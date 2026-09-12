@@ -95,11 +95,19 @@ func (a *AFetcher) dialTimeout() time.Duration {
 // BFetcher 通道 B：CDN 前缀反代（gh-proxy 协议）。
 //
 // 目标 URL 原样拼接在 Prefix 后：Prefix="https://gh-proxy.com/" +
-// "https://github.com/o/r/releases/download/v1/x.zip"。CDN 侧
-// 走系统网络（CDN 本身对大陆友好，无需择 IP）。
+// "https://github.com/o/r/releases/download/v1/x.zip"。
+//
+// 解析策略（W3）：DNS（*BDNS，DoH 主力）优先——系统 DNS 是单点故障
+// （真网实证：resolv.conf 被写成 1.1.1.1 后 B 通道直接死）；
+// DNS 为 nil 时纯系统解析（兼容旧行为，测试兜底）。
 type BFetcher struct {
 	Prefix string // 必须以 / 或 # 结尾（gh-proxy 兼容两种分隔）
 	Client *http.Client
+	DNS    *BDNS
+	// InsecureTLS 跳过证书校验（仅测试/自签内网场景；生产禁用）
+	InsecureTLS bool
+	// OnAddr 诊断回调（每次拨号的实际目标与是否 DoH 路径）
+	OnAddr func(host, addr string, doh bool)
 }
 
 // NewBFetcher 构造。prefix 空返回 nil（A-only 模式由调用方处理）。
@@ -117,7 +125,12 @@ func NewBFetcher(prefix string) *BFetcher {
 func (b *BFetcher) Get(ctx context.Context, rawURL string, from int64) (*http.Response, error) {
 	cl := b.Client
 	if cl == nil {
-		cl = &http.Client{Timeout: 120 * time.Second}
+		if b.DNS != nil {
+			d := &bDialer{DNS: b.DNS, InsecureTLS: b.InsecureTLS, OnAddr: b.OnAddr}
+			cl = d.client()
+		} else {
+			cl = &http.Client{Timeout: 120 * time.Second}
+		}
 	}
 	return doRanged(ctx, cl, b.Prefix+rawURL, from)
 }

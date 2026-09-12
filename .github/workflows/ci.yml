@@ -53,6 +53,23 @@ jobs:
       - name: ghydra on/off 生命周期 + 崩溃对账集成测试
         run: go test -tags=integration ./engine/cmd/ghydra/ -run Integration -v -count=1
 
+  # W3：Worker 模板验证（沙箱禁 npm，node_modules 只活在 CI）。
+  # 纯逻辑测试（依赖全注入）+ 类型检查 + wrangler 配置校验（dry-run 不上传）。
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run dry-run
+
   bench:
     runs-on: ubuntu-latest
     steps:

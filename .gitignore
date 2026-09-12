@@ -5,3 +5,6 @@ dist/
 *.out
 .idea/
 .vscode/
+
+# W3 worker
+worker/node_modules/
