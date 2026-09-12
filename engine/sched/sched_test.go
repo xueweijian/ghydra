@@ -362,6 +362,15 @@ func TestProbeBest(t *testing.T) {
 
 // --- Selector 适配（事件翻译 + 握手死启发式） ---
 
+func TestSelectorSSH443IsPassThrough(t *testing.T) {
+	sc, _ := newTestSched()
+	sc.AddCandidates("ssh.github.com", []string{"1.2.3.4:443"})
+	sel := NewSelector(sc, rules.New(rules.DefaultDomains))
+	if addr, accel := sel.Select("ssh.github.com"); accel || addr != "" {
+		t.Fatalf("SSH 443 在 M1 应放行而非 HTTPS 加速: %q %v", addr, accel)
+	}
+}
+
 func TestSelectorEventTranslation(t *testing.T) {
 	sc, _ := newTestSched()
 	sc.AddCandidates("github.com", []string{"1.1.1.1:443"})
@@ -433,6 +442,29 @@ func (dialErr) Error() string { return "dial tcp: connection refused" }
 func errDial() error          { return dialErr{} }
 
 // --- 并发安全（go test -race，CI Linux 矩阵）---
+
+func TestPreflightUsesDialHost(t *testing.T) {
+	sc, _ := newTestSched()
+	sc.AddCandidates("github.com", []string{"1.1.1.1:443", "2.2.2.2:443"})
+	var hostCalls, tcpCalls int
+	sc.Dial = func(string, time.Duration) error {
+		tcpCalls++
+		return nil
+	}
+	sc.DialHost = func(host, addr string, _ time.Duration) error {
+		if host != "github.com" || addr == "" {
+			t.Fatalf("DialHost 参数异常: %q %q", host, addr)
+		}
+		hostCalls++
+		return nil
+	}
+	if got := sc.Preflight("github.com"); got != 2 {
+		t.Fatalf("Preflight = %d", got)
+	}
+	if hostCalls != 2 || tcpCalls != 0 {
+		t.Fatalf("应优先使用 DialHost: host=%d tcp=%d", hostCalls, tcpCalls)
+	}
+}
 
 func TestSchedulerConcurrent(t *testing.T) {
 	sc, _ := newTestSched()

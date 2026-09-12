@@ -2,6 +2,7 @@ package sched
 
 import (
 	"net"
+	"strings"
 	"time"
 
 	"github.com/xueweijian/ghydra/engine/proxy"
@@ -24,6 +25,11 @@ func NewSelector(sc *Scheduler, m *rules.Matcher) *Selector {
 
 // Select 实现 proxy.UpstreamSelector。
 func (sel *Selector) Select(host string) (string, bool) {
+	// ssh.github.com:443 是 SSH 协议，不是 HTTPS；M1 只探测 SSH，
+	// 不把它改道到普通 GitHub HTTPS IP。通道 B/M2 再处理 SSH over 443。
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "ssh.github.com") {
+		return "", false
+	}
 	if sel == nil || sel.Sched == nil || sel.Rules == nil || !sel.Rules.Match(host) {
 		return "", false // 未命中加速域名：放行（系统 DNS 直连）
 	}

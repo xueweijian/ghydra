@@ -28,7 +28,7 @@ func TestPACLoopbackDirect(t *testing.T) {
 	// 本机流量不绕代理
 	m := New([]string{"github.com", "*.github.com"})
 	pac := m.PAC("127.0.0.1:9801")
-	if !strings.Contains(pac, "127.0.0.0") {
+	if !strings.Contains(pac, "isInNet(host, \"127.0.0.0\"") || !strings.Contains(pac, "localhost") {
 		t.Error("PAC 应含 loopback DIRECT 判定")
 	}
 }

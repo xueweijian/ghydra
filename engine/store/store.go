@@ -31,20 +31,55 @@ type probeRow struct {
 	source     string // passive | active | bootstrap
 }
 
+// DoctorRecord 是一次 doctor 子检查的持久化投影。使用基础类型，
+// 避免 store 依赖 probe 包（probe 本身只负责测量）。
+type DoctorRecord struct {
+	RunID      string
+	StartedAt  time.Time
+	Mode       string
+	Scenario   string
+	Name       string
+	Target     string
+	OK         bool
+	Reachable  bool
+	Status     int
+	Class      string
+	DurationMS float64
+	TTFBMS     float64
+	Bytes      int64
+	RateBPS    float64
+}
+
+// DoctorSummary 是 doctor report 的聚合行。
+type DoctorSummary struct {
+	Mode          string
+	Scenario      string
+	Checks        int
+	Passed        int
+	Reachable     int
+	AvgDurationMS float64
+	AvgTTFBMS     float64
+	FirstAt       time.Time
+	LastAt        time.Time
+}
+
 // Store SQLite 存储。构造用 Open；Close 等待在途写完成。
 type Store struct {
 	db *sql.DB
 
-	ch   chan probeRow // 探测日志异步队列
-	last chan lastGoodOp
-	wg   sync.WaitGroup
-	stop chan struct{}
+	ch     chan probeRow // 探测日志异步队列
+	last   chan lastGoodOp
+	doctor chan doctorOp
+	wg     sync.WaitGroup
+	stop   chan struct{}
 }
 
 type lastGoodOp struct {
 	domain, ip string
 	score, rtt float64
 }
+
+type doctorOp struct{ r DoctorRecord }
 
 // Open 打开（或创建）数据库并启动写 goroutine。path 为空时用内存库
 // （测试用）。父目录自动创建。
@@ -83,16 +118,36 @@ CREATE TABLE IF NOT EXISTS sysproxy_snapshot (
   pac_url      TEXT NOT NULL,
   taken_at     INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_probe_ts ON probe_log(ts);`); err != nil {
+CREATE TABLE IF NOT EXISTS doctor_log (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id        TEXT NOT NULL,
+  started_at    INTEGER NOT NULL,
+  mode          TEXT NOT NULL,
+  scenario      TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  target        TEXT NOT NULL,
+  ok            INTEGER NOT NULL,
+  reachable     INTEGER NOT NULL,
+  status        INTEGER NOT NULL,
+  class         TEXT NOT NULL,
+  duration_ms   REAL NOT NULL,
+  ttfb_ms       REAL NOT NULL,
+  bytes         INTEGER NOT NULL,
+  rate_bps      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_probe_ts ON probe_log(ts);
+CREATE INDEX IF NOT EXISTS idx_doctor_started ON doctor_log(started_at);
+CREATE INDEX IF NOT EXISTS idx_doctor_run ON doctor_log(run_id);`); err != nil {
 		db.Close()
 		return nil, err
 	}
 
 	s := &Store{
-		db:   db,
-		ch:   make(chan probeRow, 1024),
-		last: make(chan lastGoodOp, 64),
-		stop: make(chan struct{}),
+		db:     db,
+		ch:     make(chan probeRow, 1024),
+		last:   make(chan lastGoodOp, 64),
+		doctor: make(chan doctorOp, 1024),
+		stop:   make(chan struct{}),
 	}
 	s.wg.Add(1)
 	go s.writeLoop()
@@ -111,6 +166,9 @@ func (s *Store) writeLoop() {
 			case r := <-s.ch:
 				s.execProbe(r)
 				continue
+			case d := <-s.doctor:
+				s.execDoctor(d.r)
+				continue
 			default:
 				return
 			}
@@ -127,6 +185,8 @@ func (s *Store) writeLoop() {
 			s.execLastGood(op)
 		case r := <-s.ch:
 			s.execProbe(r)
+		case d := <-s.doctor:
+			s.execDoctor(d.r)
 		case <-tick.C: // 空闲批量刷（队列攒批后一次事务）
 			flush()
 		}
@@ -151,6 +211,16 @@ VALUES(?,?,?,?,?,?)`,
 		r.domain, r.ip, b2i(r.ok), r.rttMS, r.source, time.Now().UnixMilli())
 }
 
+func (s *Store) execDoctor(r DoctorRecord) {
+	_, _ = s.db.Exec(`INSERT INTO doctor_log(
+run_id, started_at, mode, scenario, name, target, ok, reachable, status,
+class, duration_ms, ttfb_ms, bytes, rate_bps)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		r.RunID, r.StartedAt.UnixMilli(), r.Mode, r.Scenario, r.Name, r.Target,
+		b2i(r.OK), b2i(r.Reachable), r.Status, r.Class, r.DurationMS, r.TTFBMS,
+		r.Bytes, r.RateBPS)
+}
+
 // --- 异步写接口（非阻塞；队列满则丢弃——探测日志可容忍） ---
 
 // UpdateLastGood 异步更新域名的最佳 IP。
@@ -167,6 +237,38 @@ func (s *Store) AppendProbe(domain, ip string, ok bool, rttMS float64, source st
 	case s.ch <- probeRow{domain, ip, ok, rttMS, source}:
 	default:
 	}
+}
+
+// AppendDoctor 异步追加一次 doctor 子检查。队列满时丢弃，不能阻塞
+// 正常业务路径；doctor report 的 run_id 允许调用者整组关联。
+func (s *Store) AppendDoctor(r DoctorRecord) {
+	select {
+	case s.doctor <- doctorOp{r: r}:
+	default:
+	}
+}
+
+// DoctorSummary 返回 since 之后按 mode/scenario 聚合的探针结果。
+func (s *Store) DoctorSummary(since time.Time) ([]DoctorSummary, error) {
+	rows, err := s.db.Query(`SELECT mode, scenario, COUNT(*), SUM(ok), SUM(reachable),
+COALESCE(AVG(duration_ms),0), COALESCE(AVG(ttfb_ms),0), MIN(started_at), MAX(started_at)
+FROM doctor_log WHERE started_at >= ? GROUP BY mode, scenario ORDER BY mode, scenario`, since.UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DoctorSummary
+	for rows.Next() {
+		var x DoctorSummary
+		var first, last int64
+		if err := rows.Scan(&x.Mode, &x.Scenario, &x.Checks, &x.Passed, &x.Reachable,
+			&x.AvgDurationMS, &x.AvgTTFBMS, &first, &last); err != nil {
+			return nil, err
+		}
+		x.FirstAt, x.LastAt = time.UnixMilli(first), time.UnixMilli(last)
+		out = append(out, x)
+	}
+	return out, rows.Err()
 }
 
 // --- 同步读接口 ---

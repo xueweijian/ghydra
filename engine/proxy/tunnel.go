@@ -101,10 +101,17 @@ func (s *Server) handle(conn net.Conn) {
 		writePlain(conn, http.StatusBadRequest, "ghydra: CONNECT 缺少目标")
 		return
 	}
-	hostOnly, _, _ := net.SplitHostPort(authority)
+	hostOnly, port, err := net.SplitHostPort(authority)
+	if err != nil || hostOnly == "" || port == "" {
+		writePlain(conn, http.StatusBadRequest, "ghydra: CONNECT 目标必须是 host:port")
+		return
+	}
 
+	// M1 通道 A 只改道 HTTPS CONNECT（443）。SSH/自定义端口
+	// 保持原 authority 直连：SSH 场景在 doctor 中只做连通性计量，
+	// 不误把 github.com:22 改成 IP:443 的 HTTPS 连接。
 	target, accel := authority, false
-	if s.Selector != nil {
+	if port == "443" && s.Selector != nil {
 		if up, ok := s.Selector.Select(hostOnly); ok && up != "" {
 			target, accel = up, true
 		}

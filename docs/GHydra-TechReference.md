@@ -198,4 +198,6 @@ M3 SNI转发器 → M2 IP调度器 → M1 自举DNS   （三者构成通道A，�
 
 | 模块 | 完成日期 | 参考了哪些代码 | 实际方案与计划的偏差 | 踩坑记录 |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| M2 IP 调度器 | 2026-09-12 | dev-sidecar SpeedTester；FastGithub.DomainResolve | 自研五态+EWMA；增加 Preflight **TLS SNI** 级验证（不能只测 TCP） | `185.199.x` TCP 通但 TLS ClientHello 后沉默；预筛误判会让五场景全部超时。生产候选统一 `IP:443`。 |
+| M8 系统代理 | 2026-09-12 | clash-verge-rev 思路；networksetup/gsettings/WinINet | Windows PAC Apply 也调用 InternetSetOption(39/37)；on/off 带 SQLite 快照与崩溃对账 | managed serve 启动竞态不能二次对账；恢复失败保留快照。 |
+| M11 doctor | 2026-09-13 | Ghips 301/可达性思路；GitHub 官方 SSH over 443 文档 | 五场景计 SLA，SSH 22/443 只观测；direct/proxy 双列，每小时自动落库 | 关闭魔法有效批次：direct 0/5，proxy 5/5；直连 api 可达不代表 github 主站可达。 |

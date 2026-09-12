@@ -131,7 +131,7 @@ func spawnServe(port int, dbPath string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	args := []string{"serve", "--listen", fmt.Sprintf("127.0.0.1:%d", port)}
+	args := []string{"serve", "--listen", fmt.Sprintf("127.0.0.1:%d", port), "--doctor-interval", "1h"}
 	if dbPath != "" {
 		args = append(args, "--db", dbPath)
 	}
@@ -248,9 +248,12 @@ func offCmd(args []string) {
 			if ps, pac, ok, _ := st.LoadSnapshot(); ok {
 				orig := sysproxy.Setting{ProxyServer: ps, PACURL: pac}
 				if err := sysproxy.Apply(orig); err != nil {
-					log.Printf("恢复原值失败: %v（原值 %s）", err, orig)
+					// 恢复失败不能删快照；下次命令/用户手动修复环境后
+					// 仍需有机会重试（与 ensureReconcile 一致）。
+					log.Printf("恢复原值失败: %v（原值 %s）；保留快照重试", err, orig)
+				} else {
+					st.DeleteSnapshot()
 				}
-				st.DeleteSnapshot()
 			}
 			st.Close()
 		}

@@ -173,3 +173,29 @@ func TestSnapshotRoundtrip(t *testing.T) {
 		t.Fatal("删除后应无快照")
 	}
 }
+
+func TestDoctorRecordAndSummary(t *testing.T) {
+	s, err := Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now()
+	s.AppendDoctor(DoctorRecord{RunID: "r1", StartedAt: now, Mode: "direct", Scenario: "web", Name: "web", Target: "https://github.com", OK: true, Reachable: true, Class: "ok", DurationMS: 100, TTFBMS: 80})
+	s.AppendDoctor(DoctorRecord{RunID: "r1", StartedAt: now, Mode: "direct", Scenario: "web", Name: "web", Target: "https://github.com", OK: false, Reachable: false, Class: "timeout", DurationMS: 200})
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		rows, qerr := s.DoctorSummary(now.Add(-time.Second))
+		if qerr != nil {
+			t.Fatal(qerr)
+		}
+		if len(rows) == 1 && rows[0].Checks == 2 {
+			if rows[0].Passed != 1 || rows[0].Reachable != 1 {
+				t.Fatalf("summary counts: %+v", rows[0])
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("doctor_log 未在时限内落库")
+}

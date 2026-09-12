@@ -3,25 +3,37 @@
 > 一头直连，一头 CDN —— 断一头，活一头。
 > 中国开发者的 GitHub 全链路加速器：网页 / 登录 / clone / push / Release 下载 / SSH 六场景，周可用率 ≥ 99.5%。
 
-**状态：M0（技术验证期）** —— 当前仓库包含 ClientHello 解析/改写 PoC 与四级自举链原型。
+**状态：M1 W4（直连通道 dogfooding 准备）** —— CONNECT 代理、IP 调度器、PAC/系统代理接管、doctor 六场景探针已落地；Windows 真机验收与 7 天数据收集是当前退出项。
 
-## M0 组成
+## 当前组成
 
 | 模块 | 说明 |
 |---|---|
 | `engine/sni` | 手写 TLS ClientHello 解析 + SNI 改写（不解密、零第三方依赖、可审计） |
 | `engine/bootstrap` | 四级自举链：meta API → DoH → last-good 缓存 → 冻结种子直连 |
-| `engine/cmd/ghydra` | CLI：`bench`（自举链报告）/ `poc`（本地 SNI 转发器） |
+| `engine/cmd/ghydra` | CLI：`on/off/serve/status/doctor/bench` + PoC/压测 |
+| `engine/probe` | W4 六场景探针、阶段计时、根因分类、direct 对照 |
+| `engine/sysproxy` | Windows 注册表/WinINet、macOS networksetup、Linux gsettings |
 
 ## 用法
 
 ```bash
-# 四级自举链探测（真机验收用 --json 贴回报告）
-go run ./engine/cmd/ghydra bench --json
+# 后台接管（Windows 主力平台推荐 PAC 模式）
+ghydra on
+# 退出并恢复接管前代理
+ghydra off
 
-# 本地 SNI 转发器（curl --resolve 配合验证）
-go run ./engine/cmd/ghydra poc --listen 127.0.0.1:8443
-curl --resolve github.com:8443:127.0.0.1 https://github.com:8443 -kI
+# 六场景报告：direct 对照 + 本地 GHydra 通道，结果落 SQLite
+ghydra doctor --mode both --json
+# 7 天汇总
+ghydra doctor --report --since 168h
+
+# 自举链 / 六 GitHub 域名存活
+ ghydra bench --mode bootstrap --json
+ghydra bench --mode proxy --proxy http://127.0.0.1:9801 --json
+
+# 前台服务调试
+ghydra serve --listen 127.0.0.1:9801
 ```
 
 ## 设计文档

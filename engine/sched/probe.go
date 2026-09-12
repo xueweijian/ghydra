@@ -12,7 +12,7 @@ import (
 // 主动探测是「为辅」路径（设计 §1.3）：正常演进全靠被动信号，
 // 这里只为维持 RTT 新鲜度与冷启动验证。返回本轮探测的 IP 数。
 func (s *Scheduler) ProbeBest(host string, topN int) int {
-	if s.Dial == nil {
+	if s.Dial == nil && s.DialHost == nil {
 		return 0
 	}
 	// 取快照（持锁最短），探测在锁外。
@@ -45,7 +45,12 @@ func (s *Scheduler) ProbeBest(host string, topN int) int {
 	n := 0
 	for _, t := range targets {
 		t0 := s.clock()
-		err := s.Dial(t.addr, s.cfg.ProbeTimeout)
+		var err error
+		if s.DialHost != nil {
+			err = s.DialHost(host, t.addr, s.cfg.ProbeTimeout)
+		} else {
+			err = s.Dial(t.addr, s.cfg.ProbeTimeout)
+		}
 		s.Report(host, t.addr, s.clock().Sub(t0), err == nil)
 		n++
 	}
@@ -57,7 +62,7 @@ func (s *Scheduler) ProbeBest(host string, topN int) int {
 // （2026-09-12 实测：meta 老段 20 个 IP 大多不可达，逐个轮转
 // 等于 140s 的用户体验灾难）。活的立即入 Active 供择优。
 func (s *Scheduler) Preflight(host string) int {
-	if s.Dial == nil {
+	if s.Dial == nil && s.DialHost == nil {
 		return 0
 	}
 	s.mu.Lock()
@@ -86,7 +91,12 @@ func (s *Scheduler) Preflight(host string) int {
 		go func(i int, addr string) {
 			defer wg.Done()
 			t0 := s.clock()
-			err := s.Dial(addr, s.cfg.ProbeTimeout)
+			var err error
+			if s.DialHost != nil {
+				err = s.DialHost(host, addr, s.cfg.ProbeTimeout)
+			} else {
+				err = s.Dial(addr, s.cfg.ProbeTimeout)
+			}
 			results[i] = result{addr, s.clock().Sub(t0), err == nil}
 		}(i, addr)
 	}

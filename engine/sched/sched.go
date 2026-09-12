@@ -83,9 +83,12 @@ type Scheduler struct {
 	domains map[string]*domainState
 
 	// 可注入依赖（生产由 cmd 层接线；测试注入 fake）。
-	Dial    func(addr string, timeout time.Duration) error // 主动 TCP 探测
-	Resolve func(domain string) ([]string, error)          // 池枯竭时 DNS/DoH 补充
-	Logf    func(format string, args ...any)               // 调试日志
+	Dial func(addr string, timeout time.Duration) error // 主动 TCP 探测（兼容测试/通用候选）
+	// DialHost 可选：按 host 的 SNI 做完整 TLS 预筛。HTTPS 加速生产路径
+	// 使用它，避免“TCP 通但 ClientHello 后沉默”的死 IP 被标成 Active。
+	DialHost func(host, addr string, timeout time.Duration) error
+	Resolve  func(domain string) ([]string, error) // 池枯竭时 DNS/DoH 补充
+	Logf     func(format string, args ...any)      // 调试日志
 
 	// OnActive 在任意 IP 变为/维持 Active 且拿到新 RTT 样本时回调
 	// （供 store 持久化 last_good）。回调在调度器锁内，必须非阻塞。
@@ -384,7 +387,7 @@ func (s *Scheduler) resolveAsync(host string) {
 	}
 	if n := s.AddCandidates(host, ips); n > 0 {
 		s.logf("[sched] 池枯竭补充 %s: +%d 候选", host, n)
-		if s.Dial != nil {
+		if s.Dial != nil || s.DialHost != nil {
 			go s.Preflight(host) // 预筛后活 IP 才进用户连接路径
 		}
 	}

@@ -9,7 +9,6 @@ package sysproxy
 import (
 	"fmt"
 	"syscall"
-	"unsafe"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -48,8 +47,12 @@ func applyOS(s Setting) error {
 		if err := k.SetStringValue("AutoConfigURL", s.PACURL); err != nil {
 			return err
 		}
-		// PAC 模式下停用手动代理，避免叠加
-		return k.SetDWordValue("ProxyEnable", 0)
+		// PAC 模式下停用手动代理，避免叠加；两次注册表写完后
+		// 必须通知 WinINet，否则已有进程可能继续使用旧配置。
+		if err := k.SetDWordValue("ProxyEnable", 0); err != nil {
+			return err
+		}
+		return refreshWininet()
 	}
 	if err := k.SetStringValue("ProxyServer", s.ProxyServer); err != nil {
 		return err
@@ -86,6 +89,5 @@ func refreshWininet() error {
 	if r, _, _ := proc.Call(0, 37, 0, 0); r == 0 {
 		return fmt.Errorf("InternetSetOption(REFRESH) 失败")
 	}
-	_ = unsafe.Pointer(nil)
 	return nil
 }

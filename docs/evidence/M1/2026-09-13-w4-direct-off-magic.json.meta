@@ -1,0 +1,5 @@
+本文件对应 /tmp/doctor-valid-direct.json（2026-09-13，用户确认关闭魔法）。
+原始 JSON 未直接复制到仓库，避免把本地绝对时间与临时数据库路径当作源码资产；如需归档，运行：
+ghydra doctor --mode direct --timeout 10s --db ~/.ghydra/ghydra.db --json > docs/evidence/M1/2026-09-13-w4-direct-off-magic.json
+
+结果摘要：五场景 0/5；SSH 观测 1/2（22 超时、ssh.github.com:443 可达）。github/api 的选择性可达差异已记录。

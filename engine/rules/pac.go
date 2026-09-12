@@ -17,8 +17,7 @@ func (m *Matcher) PAC(proxyAddr string) string {
 	b.WriteString("// 加速域名走本地代理，其余全部 DIRECT（零打扰）。\n")
 	b.WriteString("function FindProxyForURL(url, host) {\n")
 	b.WriteString("  host = String(host).toLowerCase();\n")
-	b.WriteString("  if (isInNet(dnsResolve(host), \"127.0.0.0\", \"255.0.0.0\")) return \"DIRECT\";\n")
-	b.WriteString("  if (isInNet(dnsResolve(host), \"::1\", \"0\")) return \"DIRECT\";\n")
+	b.WriteString("  if (host == \"localhost\" || host == \"localhost.localdomain\" || host == \"::1\" || host == \"[::1]\" || isInNet(host, \"127.0.0.0\", \"255.0.0.0\")) return \"DIRECT\";\n")
 
 	doms := append([]string(nil), m.doms...)
 	sort.Strings(doms)

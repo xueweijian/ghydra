@@ -276,6 +276,34 @@ func TestTunnelRejectsNonConnect(t *testing.T) {
 	}
 }
 
+// TestTunnelNon443BypassesSelector SSH/自定义端口不应被 HTTPS IP
+// 调度器改道：目标 authority 原样直连，防止 github.com:22 被拨到
+// GitHub HTTPS 的 443 地址。
+func TestTunnelNon443BypassesSelector(t *testing.T) {
+	up, stopUp, err := startFakeTLS(t, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopUp()
+	called := false
+	sel := SelectorFunc(func(string) (string, bool) {
+		called = true
+		return "127.0.0.1:1", true
+	})
+	proxyAddr, events, stop := startProxy(t, sel)
+	defer stop()
+	c := dialAndConnect(t, proxyAddr, up.Addr)
+	c.Close()
+	select {
+	case ev := <-events:
+		if called || ev.Accel || ev.Target != up.Addr {
+			t.Fatalf("非 443 不应调 selector: called=%v ev=%+v", called, ev)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("未收到连接事件")
+	}
+}
+
 // TestTunnelDialFailure 上游不可达：客户端 502 + 事件带 DialErr。
 func TestTunnelDialFailure(t *testing.T) {
 	sel := SelectorFunc(func(string) (string, bool) { return "127.0.0.1:1", true }) // 未监听端口

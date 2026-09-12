@@ -41,6 +41,7 @@ import (
 	"github.com/xueweijian/ghydra/engine/bootstrap"
 	"path/filepath"
 
+	"github.com/xueweijian/ghydra/engine/probe"
 	"github.com/xueweijian/ghydra/engine/proxy"
 	"github.com/xueweijian/ghydra/engine/rules"
 	"github.com/xueweijian/ghydra/engine/sched"
@@ -58,6 +59,8 @@ func main() {
 	switch os.Args[1] {
 	case "bench":
 		benchCmd(os.Args[2:])
+	case "doctor":
+		doctorCmd(os.Args[2:])
 	case "poc":
 		pocCmd(os.Args[2:])
 	case "loadtest":
@@ -87,7 +90,8 @@ func usage() {
   ghydra off                                          恢复系统代理 + 停止 serve
   ghydra serve [--listen ADDR] [--scheduler on|off]   前台运行（调试用）
   ghydra status                                      last_good 持久化观察口
-  ghydra bench [--json]                             四级自举链探测报告
+  ghydra doctor [--mode direct|proxy|both]          六场景探针+直连对照+分类报告
+  ghydra bench [--mode bootstrap|direct|proxy]     自举链或六域名存活报告
   ghydra poc [--listen ADDR] [--rewrite-sni N]      裸 SNI 转发器（调试工具）
   ghydra loadtest [--mode sni|connect] [--concurrency N] [--rounds M]  并发压测
 `)
@@ -140,10 +144,17 @@ func serveCmd(args []string) {
 	timeout := fs.Duration("dial-timeout", proxy.DefaultDialTimeout, "上游连接超时")
 	schedOn := fs.Bool("scheduler", true, "IP 调度器（off = W1 直连行为，对照/逃生）")
 	dbPath := fs.String("db", defaultDBPath(), "SQLite 路径（空 = 不持久化）")
+	doctorInterval := fs.Duration("doctor-interval", 0, "自动 doctor 周期（0 = 关闭；ghydra on 默认 1h）")
+	doctorRepo := fs.String("doctor-repo", probe.DefaultConfig().Repo, "自动 doctor 使用的仓库 owner/name")
 	managed := fs.Bool("managed", false, "由 ghydra on 拉起（退出时恢复系统代理）")
 	_ = fs.Parse(args)
 
-	ensureReconcile(*dbPath)
+	// on 已在拉起前完成残留对账并写入快照；managed 子进程启动
+	// 期间快照存在但 serve.json 还没落盘，不能把当前接管误判成
+	// 上一代 kill -9 残留（W3 启动竞态）。
+	if !*managed {
+		ensureReconcile(*dbPath)
+	}
 
 	m := rules.New(rules.DefaultDomains)
 
@@ -168,6 +179,7 @@ func serveCmd(args []string) {
 	}
 
 	var conns atomic.Int64
+
 	srv := &proxy.Server{
 		Selector:    sel,
 		DialTimeout: *timeout,
@@ -244,6 +256,12 @@ func serveCmd(args []string) {
 		ln.Close()
 	}()
 
+	var stopDoctor func()
+	if *doctorInterval > 0 && *dbPath != "" {
+		stopDoctor = startDoctorLoop(*doctorInterval, *dbPath, *doctorRepo, "http://"+ln.Addr().String())
+		defer stopDoctor()
+	}
+
 	log.Printf("ghydra serve 已启动: %s | 加速域名 %d 条 | scheduler=%t | backlog %d",
 		ln.Addr().String(), len(m.Domains()), *schedOn, *backlog)
 	log.Printf("PAC: http://%s/pac | 系统代理指向 %s（或 ghydra on 一键接管）",
@@ -312,7 +330,9 @@ func startScheduler(m *rules.Matcher, dbPath string) (*sched.Selector, func(), e
 		}
 	}
 
-	// 主动探测拨号：TCP-only（设计 §1.3，FastGithub 同款）
+	// 主动探测拨号：保留 TCP-only 作为通用回退；HTTPS 候选的
+	// Preflight/refresh 使用下面的 DialHost 做带 SNI 的 TLS 握手，
+	// 避免 TCP 通但 ClientHello 后沉默的死 IP 被放入 Active。
 	sc.Dial = func(addr string, timeout time.Duration) error {
 		c, err := net.DialTimeout("tcp", addr, timeout)
 		if err != nil {
@@ -321,13 +341,42 @@ func startScheduler(m *rules.Matcher, dbPath string) (*sched.Selector, func(), e
 		c.Close()
 		return nil
 	}
+	sc.DialHost = func(host, addr string, timeout time.Duration) error {
+		var d net.Dialer
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		c, err := d.DialContext(ctx, "tcp", addr)
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+		if err := c.SetDeadline(time.Now().Add(timeout)); err != nil {
+			return err
+		}
+		t := tls.Client(c, &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host})
+		if err := t.Handshake(); err != nil {
+			return err
+		}
+		return nil
+	}
 
 	// 池枯竭兜底：DoH 解析该域名（bootstrap 的 per-host 能力）
+	// 调度器池内地址统一为 host:443，避免裸 IP 在代理数据面报
+	// "missing port in address"。
+
 	resolver := bootstrap.New()
 	sc.Resolve = func(host string) ([]string, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 		defer cancel()
-		return resolver.ResolveHost(ctx, host)
+		ips, err := resolver.ResolveHost(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]string, 0, len(ips))
+		for _, ip := range ips {
+			out = append(out, net.JoinHostPort(ip, "443"))
+		}
+		return out, nil
 	}
 
 	// ① 候选喂数：DoH 解析（就近可达 IP，实测质量最高）+ 自举链
@@ -402,8 +451,42 @@ func defaultDBPath() string {
 func benchCmd(args []string) {
 	fs := flag.NewFlagSet("bench", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "输出 JSON（真机验收报告格式）")
+	mode := fs.String("mode", "bootstrap", "模式: bootstrap|direct|proxy")
+	proxyAddr := fs.String("proxy", "http://127.0.0.1:9801", "proxy 模式的 HTTP CONNECT 地址")
+	repo := fs.String("repo", "xueweijian/ghydra", "六域名探针使用的仓库 owner/name")
 	timeout := fs.Duration("timeout", 30*time.Second, "总超时")
 	_ = fs.Parse(args)
+
+	if *mode == "direct" || *mode == "proxy" {
+		cfg := probe.DefaultConfig()
+		cfg.Timeout, cfg.ProxyURL, cfg.Repo = *timeout, *proxyAddr, *repo
+		runner := probe.New(cfg)
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout+3*time.Second)
+		defer cancel()
+		pmode := probe.ModeDirect
+		if *mode == "proxy" {
+			pmode = probe.ModeProxy
+		}
+		checks := runner.RunGitHubDomains(ctx, pmode)
+		if *asJSON {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(map[string]any{"mode": pmode, "checks": checks})
+			return
+		}
+		passed := 0
+		for _, c := range checks {
+			if c.OK {
+				passed++
+			}
+			fmt.Printf("%-10s %-4s %-15s status=%d ttfb=%.1fms class=%s %s\n", c.Name, map[bool]string{true: "OK", false: "FAIL"}[c.OK], c.Mode, c.Status, c.TTFBMS, c.Class, c.Error)
+		}
+		fmt.Printf("bench %s: %d/%d GitHub 域名可用\n", pmode, passed, len(checks))
+		return
+	}
+	if *mode != "bootstrap" {
+		log.Fatalf("无效 --mode %q（bootstrap|direct|proxy）", *mode)
+	}
 
 	r := bootstrap.New()
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)

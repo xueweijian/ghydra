@@ -1,7 +1,7 @@
 # GHydra M1 实施方案 · 直连通道产品化
 > **用途**：里程碑 M1（PRD §8，第 3–6 周）的完整实施规划。评审通过后按周执行，每周结束回填状态。
 > **关联**：`GHydra-PRD.md` §8 M1、`GHydra-TechReference.md` 模块卡片 M2/M3/M8、`GHydra-DevWorkflow.md` 四铁律。
-> **状态**：执行中（2026-09-12）。**W1 已收官**（内核/rules/listener/serve/loadtest-connect + CI 三平台绿 + 真网冒烟 6/6，证据 `docs/evidence/M1/`）；cobra 改为手写路由（TechReference §3 已回填）。W2 设计见 `GHydra-M1-W2-Design.md`。
+> **状态**：W1–W4 代码已落地（2026-09-13）。W4 关闭魔法真网证据见 `docs/evidence/M1/2026-09-13-w4-smoke.md`；下一退出项是 Windows 主力机 `on/off` 真机验收与 7 天 dogfooding。cobra 改为手写路由（TechReference §3 已回填）。W2 设计见 `GHydra-M1-W2-Design.md`。
 
 ---
 
@@ -118,11 +118,11 @@ engine/
 ### W4（第 6 周）· doctor 探针 + v0.1 + dogfooding 启动
 | 任务 | 交付 | 测试证据 |
 |---|---|---|
-| 六场景探针（网页/登录/clone dry-run/push dry-run/Release TTFB+速率/SSH 22+443 连通） | `engine/probe/` | L2：mock 各场景响应；L3：真机报告 |
-| 基础根因分类（能分则分：DNS污染/TCP阻断/TLS重置/超时——完整版留 M11） | `engine/probe/classify.go` | L1：注入各错误类型断言分类 |
-| 可用率统计（每小时自动探测 + 直连对照组 + 7 天汇总） | `engine/probe/sla.go` | L2：时间模拟（假时钟）统计正确性 |
-| `ghydra status / doctor` + bench --mode proxy | cmd | 真机 L3 报告 |
-| v0.1 tag + release（CI artifact + SHA256） | 发布 | CI release 流水线 |
+| 六场景探针（网页/登录/clone dry-run/push dry-run/Release TTFB+速率/SSH 22+443 连通） | `engine/probe/` | L2：mock + 关闭魔法真机报告 ✓ |
+| 基础根因分类（能分则分：DNS污染/TCP阻断/TLS重置/超时——完整版留 M11） | `engine/probe/probe.go` | L1：注入各错误类型断言分类 ✓ |
+| 可用率统计（每小时自动探测 + 直连对照组 + 7 天汇总） | `engine/probe/` + `store.doctor_log` | 自动循环/汇总接口 ✓；7 天数据待 dogfooding |
+| `ghydra status / doctor` + bench --mode proxy | cmd | 关闭魔法 L3：direct 0/5、proxy 5/5 ✓ |
+| v0.1 tag + release（CI artifact + SHA256） | 发布 | 待 Windows 真机验收后执行 |
 | **dogfooding 启动**（用户主力 PC，7 天） | 验收数据 | 每日 doctor report 贴回 |
 
 ## 5. 测试与验收（映射 DevWorkflow 金字塔）
