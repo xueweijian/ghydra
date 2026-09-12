@@ -224,6 +224,38 @@ func (r *Resolver) fetchMetaWith(ctx context.Context, client *http.Client) ([]st
 	return ips, m.Domains.Website, nil
 }
 
+// dohDialMap 把 DoH 端点域名映射到已知服务 IP，使 L2 在系统 DNS
+// 完全不可用时仍可工作（自举链每一级都不得依赖上一级的能力）。
+// 阿里 / 腾讯的公共 DoH 服务 IP 官方长期稳定。
+var dohDialMap = map[string]string{
+	"dns.alidns.com": "223.5.5.5",
+	"doh.pub":        "119.29.29.29",
+}
+
+// resolveDoHAddr 将 addr 中的 DoH 域名替换为已知 IP，其余原样返回。
+func resolveDoHAddr(addr string, dialMap map[string]string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	if ip, ok := dialMap[host]; ok {
+		return net.JoinHostPort(ip, port)
+	}
+	return addr
+}
+
+// dohClient 的 Transport 在 TCP 层拨服务 IP，但 URL/Host/SNI/证书
+// 校验仍按端点域名进行，语义与正常访问完全一致。
+var dohClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, network, resolveDoHAddr(addr, dohDialMap))
+		},
+	},
+}
+
 // fetchDoH 请求一个 DoH JSON 端点并提取 A 记录。
 func (r *Resolver) fetchDoH(ctx context.Context, endpoint string) ([]string, error) {
 	u := endpoint + "?name=" + url.QueryEscape(r.DoHName) + "&type=A"
@@ -231,7 +263,7 @@ func (r *Resolver) fetchDoH(ctx context.Context, endpoint string) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	resp, err := directClient.Do(req)
+	resp, err := dohClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

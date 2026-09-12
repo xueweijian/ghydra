@@ -118,7 +118,7 @@ GitHub 对大陆 IP 整体 403（04-12 20:01 UTC → 04-13 14:55 回滚）。直
 ### F3 无证书直连引擎（P0）
 - 本地透明代理（系统代理 + PAC，非 hosts 模式）
 - TLS ClientHello 解析（手写 ~150 行，不引第三方库，便于审计）
-- 提取真实 SNI → 可选 SNI 改写（domain fronting）→ 连接择优 IP
+- 提取真实 SNI → 连接择优 IP，原样转发（**透明 SNI 改写已于 M0 实验证伪并移出功能集**：TLS 1.3 在 ServerHello 密钥派生即绑定握手全文 transcript，TLS 1.2 在 Finished 校验绑定——中间盒改写 ClientHello 任一字节必然 bad record mac。`ghydra poc --rewrite-sni` 仅保留为协议实验工具）
 - IP 池来源：GitHub meta API（`/meta` 的 web/git 字段 + `domains.website`）→ DoH 校验（dns.alidns.com JSON API）→ last-good 本地缓存 → 冻结种子清单（四级自举链）
 - 验收：Wireshark 抓包证明用户流量未被解密；ClientHello 解析单次 < 50µs
 
@@ -323,6 +323,13 @@ type Rule struct {
 - **退出标准**：① 改写 SNI 后 TLS 握手成功且 GitHub 可访问 ② 自举链在断 DNS（改 127.0.0.1:53）环境下仍能拿到 IP ③ 自部署 CF Worker 能完整代理 ≥100MB Release 文件（或实测得出容量上限，作为 M2 通道 B 设计输入）
 - **交付物**：PoC 仓库 + 基准报告
 
+**M0 实验记录（2026-09-12，真机直连环境实测）**
+- ① SNI 透传：六域名 6/6 存活（github / api / codeload / avatars / objects / raw 全部完成 TLS 握手 + 真实 HTTP 响应，证书链完整）
+- ② 断 DNS 自举：系统 DNS 置黑洞后，L2 DoH 经服务 IP 直连（223.5.5.5）227ms 兜底成功；DoH 亦失效时 L3 缓存 0.4ms 兜底——每级均不依赖系统 DNS
+- 性能：ClientHello 解析 1.87µs/op（验收线 <50µs，26 倍余量），改写 86ns
+- 反向结论：SNI 透明改写在 TLS 1.2 / 1.3 下均被 transcript 完整性机制协议级阻断（bad record mac），双版本对照实验完成，移出功能集
+- 剩余：③ CF Worker 大文件实验、千并发基准
+
 ### M1 · 第 3–6 周 · 「直连通道产品化」
 - **目标**：通道 A 达到可日常自用（dogfooding）
 - **做什么**
@@ -372,7 +379,7 @@ type Rule struct {
 
 | 风险 | 概率 | 影响 | 对策 |
 |---|---|---|---|
-| SNI 改写被针对性识别 | 中 | 高 | 规则热更新；CDN 通道兜底；可关闭 fronting 只做 IP 择优 |
+| ~~SNI 改写被针对性识别~~ | — | — | 已于 M0 实验证伪并移出功能集（TLS transcript 完整性阻断一切透明改写，与识别无关）；通道 A 主力 = IP 择优 + 原样 SNI 转发 |
 | 公共 gh-proxy 节点跑路/投毒 | 高 | 中 | 默认引导自建 CF Worker（一键部署）；协议适配层可插拔 |
 | GitHub meta 接口改版 | 中 | 中 | `domains` 字段 + DoH + 缓存三重冗余；版本化解析器 |
 | MITM 模式被滥用/误用 | 低 | 高 | 默认关；开启需二次确认+风险文案；证书一键卸载 |

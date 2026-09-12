@@ -77,8 +77,10 @@ docs/            # PRD / TechReference / 本约定 / evidence/
 
 ## 7. M0 三实验（技术风险清零清单）
 
-1. SNI 转发 PoC：ClientHello 手写解析 + 改写，真实大陆网络握手 + 持续存活率
-2. 四级自举链原型：断 DNS（改 127.0.0.1:53）下仍能取到 IP
+1. ✅ SNI 转发 PoC：ClientHello 手写解析 + 改写，真实大陆网络握手 + 持续存活率
+   - 2026-09-12 真机实测：透传六域名 6/6 存活；**透明改写双证伪**（TLS 1.3 ServerHello 密钥派生绑 transcript / TLS 1.2 Finished 校验绑 transcript → bad record mac），改写移出功能集，仅留实验工具
+2. ✅ 四级自举链原型：断 DNS（改 127.0.0.1:53）下仍能取到 IP
+   - 2026-09-12 真机实测：L2 DoH 服务 IP 直连（223.5.5.5）227ms 兜底 / L3 缓存 0.4ms 兜底；DoH 端点必须配 IP（域名形式在断 DNS 下自锁，已修复）
 3. CF Worker 免费档大文件代理实测：CPU 时间限额 + 100–500MB Release 流式透传（通道 B 容量上限，M2 设计输入）
 
 三实验对应 PRD M0 退出标准 ①②③。

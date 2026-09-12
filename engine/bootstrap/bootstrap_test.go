@@ -106,6 +106,21 @@ func TestMetaFetch(t *testing.T) {
 	}
 }
 
+func TestResolveDoHAddr(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"dns.alidns.com:443", "223.5.5.5:443"},
+		{"doh.pub:443", "119.29.29.29:443"},
+		{"[2606:50c0::1]:443", "[2606:50c0::1]:443"},
+		{"unknown.example.com:443", "unknown.example.com:443"},
+		{"no-port.example.com", "no-port.example.com"},
+	}
+	for _, c := range cases {
+		if got := resolveDoHAddr(c.in, dohDialMap); got != c.want {
+			t.Errorf("resolveDoHAddr(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestDoHFetch(t *testing.T) {
 	srv := serveFixture(t, "testdata/doh_sample.json")
 	r := &Resolver{HTTP: srv.Client(), DoHName: "github.com"}
