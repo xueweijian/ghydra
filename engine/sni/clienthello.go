@@ -17,9 +17,9 @@ import (
 // 解析与改写过程中的错误。调用方应将非 EOF 错误视为连接不可识别，
 // 原样直连或拒绝，绝不重试解析。
 var (
-	ErrNotHandshake   = errors.New("sni: first TLS record is not a handshake record")
-	ErrNotClientHello = errors.New("sni: first handshake message is not a ClientHello")
-	ErrMalformed      = errors.New("sni: malformed ClientHello")
+	ErrNotHandshake    = errors.New("sni: first TLS record is not a handshake record")
+	ErrNotClientHello  = errors.New("sni: first handshake message is not a ClientHello")
+	ErrMalformed       = errors.New("sni: malformed ClientHello")
 	ErrNoSNI           = errors.New("sni: ClientHello contains no server_name extension")
 	ErrRecordTooLarge  = errors.New("sni: TLS record length exceeds limit")
 	ErrInvalidSNIValue = errors.New("sni: invalid replacement SNI value")
