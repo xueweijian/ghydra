@@ -64,6 +64,10 @@ func (sel *Selector) ReportEvent(ev proxy.Event) {
 	sel.Sched.Report(ev.Host, addr, rtt, true)
 }
 
+// HandshakeDead 对外暴露握手死判定（daemon 的 CONNECT 事件进通道
+// 流量窗口时复用同一特征口径）。
+func HandshakeDead(ev proxy.Event) bool { return looksLikeHandshakeDead(ev) }
+
 // looksLikeHandshakeDead：dial 成功但上游零回包（客户端发出去的
 // ClientHello 石沉大海）+ 带转发错误——TCP 通而 TLS 死的干扰特征。
 // 实测特征（2026-09-12 移动网络）：tx=517 rx=0，客户端超时断开后

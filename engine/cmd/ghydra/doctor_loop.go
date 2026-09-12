@@ -10,14 +10,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xueweijian/ghydra/engine/channel"
 	"github.com/xueweijian/ghydra/engine/probe"
 	"github.com/xueweijian/ghydra/engine/store"
 )
 
 // startDoctorLoop 每个周期运行一次 direct 对照 + proxy 通道探针。
 // 首轮立即执行，随后按 interval；interval 必须由 serve 已确定的实际
-// 监听地址传入。返回函数只停止循环，不强行中断当前一次探测。
-func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL string) func() {
+// 监听地址传入。notify 可为 nil；非 nil 时每轮把蒸馏判定
+// （channel.Verdict）回调给调用方（serve 的通道决策器）。
+func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL string, notify func(channel.Verdict)) func() {
 	if interval <= 0 || dbPath == "" || proxyURL == "" {
 		return func() {}
 	}
@@ -57,6 +59,11 @@ func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL string) func
 		for _, rep := range reports {
 			log.Printf("[doctor-loop] %s 五场景 %d/%d，SSH观测 %d/%d，%.0fms",
 				rep.Mode, rep.CoveredPassed, rep.CoveredTotal, rep.Passed, rep.Total, rep.DurationMS)
+		}
+		if notify != nil {
+			v := channel.VerdictFromReports(&proxy, &direct)
+			notify(v)
+			log.Printf("[doctor-loop] 通道判定: %s", verdictName(v))
 		}
 	}
 
@@ -100,4 +107,19 @@ func waitDoctorProxy(raw string, timeout time.Duration) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("等待 %s/status 超时", u.Host)
+}
+
+func verdictName(v channel.Verdict) string {
+	switch v {
+	case channel.VerdictHealthy:
+		return "healthy（A 恢复）"
+	case channel.VerdictSourceFault:
+		return "source_fault（源头故障 → 切 B）"
+	case channel.VerdictNetworkFault:
+		return "network_fault（网络阻断 → 切 B）"
+	case channel.VerdictUnclear:
+		return "unclear（不动通道）"
+	default:
+		return "none（无数据）"
+	}
 }

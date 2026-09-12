@@ -41,6 +41,7 @@ import (
 	"github.com/xueweijian/ghydra/engine/bootstrap"
 	"path/filepath"
 
+	"github.com/xueweijian/ghydra/engine/channel"
 	"github.com/xueweijian/ghydra/engine/probe"
 	"github.com/xueweijian/ghydra/engine/proxy"
 	"github.com/xueweijian/ghydra/engine/rules"
@@ -65,6 +66,8 @@ func main() {
 		pocCmd(os.Args[2:])
 	case "loadtest":
 		loadtestCmd(os.Args[2:])
+	case "get":
+		getCmd(os.Args[2:])
 	case "serve":
 		serveCmd(os.Args[2:])
 	case "on":
@@ -88,7 +91,8 @@ func usage() {
 用法:
   ghydra on [--port N] [--mode pac|proxy]             接管系统代理 + 后台拉起 serve
   ghydra off                                          恢复系统代理 + 停止 serve
-  ghydra serve [--listen ADDR] [--scheduler on|off]   前台运行（调试用）
+  ghydra serve [--listen ADDR] [--scheduler on|off] [--cdn URL]   前台运行（调试用）
+  ghydra get <url> [-o 文件] [--cdn URL] [--json] [--stats]  下载器（A 择优/B 续传切道）
   ghydra status                                      last_good 持久化观察口
   ghydra doctor [--mode direct|proxy|both]          六场景探针+直连对照+分类报告
   ghydra bench [--mode bootstrap|direct|proxy]     自举链或六域名存活报告
@@ -146,6 +150,7 @@ func serveCmd(args []string) {
 	dbPath := fs.String("db", defaultDBPath(), "SQLite 路径（空 = 不持久化）")
 	doctorInterval := fs.Duration("doctor-interval", 0, "自动 doctor 周期（0 = 关闭；ghydra on 默认 1h）")
 	doctorRepo := fs.String("doctor-repo", probe.DefaultConfig().Repo, "自动 doctor 使用的仓库 owner/name")
+	cdn := fs.String("cdn", "", "B 通道 CDN 前缀（如 https://gh-proxy.com/；空 = 禁用切道，W3 默认化）")
 	managed := fs.Bool("managed", false, "由 ghydra on 拉起（退出时恢复系统代理）")
 	_ = fs.Parse(args)
 
@@ -178,6 +183,14 @@ func serveCmd(args []string) {
 		defer shutdown()
 	}
 
+	// 通道级决策器（M2-W1）：CONNECT 事件进流量窗口，doctor 判定
+	// 驱动熔断/恢复，明文 HTTP 路径按其决策 A/B 改写（D1/D3）
+	chRouter := channel.New(channel.DefaultConfig(), nil)
+	var pick func(string) (string, bool)
+	if sc != nil {
+		pick = func(host string) (string, bool) { return sc.Pick(host) }
+	}
+
 	var conns atomic.Int64
 
 	srv := &proxy.Server{
@@ -195,6 +208,11 @@ func serveCmd(args []string) {
 				n, e.Host, e.Target, e.Accel, e.DialMS, e.Rx, e.Tx, status)
 			if reportEvent != nil {
 				reportEvent(e) // 调度器信号（非阻塞；池外目标自动忽略）
+			}
+			// CONNECT 成败进通道 A 流量窗口（通道级熔断的流量信号）
+			if e.Accel {
+				chRouter.Report(channel.Flow{Kind: channel.KindCONNECT, Host: e.Host},
+					channel.Direct, e.DialErr == nil && !sched.HandshakeDead(e))
 			}
 		},
 	}
@@ -223,8 +241,14 @@ func serveCmd(args []string) {
 			}
 			out["pools"] = pools
 		}
+		out["channel"] = chRouter.Snapshot()
+		if *cdn != "" {
+			out["cdn"] = *cdn
+		}
 		writeJSON(w, out)
 	})
+	// 明文 http 代理路径：URL 可见 → 按通道决策 A 转发 / B CDN 改写
+	mux.Handle("/", servePlainHTTP(chRouter, m, pick, *cdn))
 	srv.HTTPHandler = mux
 
 	// 端口冲突迁移（W3：9801 被占 → +1..+8）
@@ -258,7 +282,7 @@ func serveCmd(args []string) {
 
 	var stopDoctor func()
 	if *doctorInterval > 0 && *dbPath != "" {
-		stopDoctor = startDoctorLoop(*doctorInterval, *dbPath, *doctorRepo, "http://"+ln.Addr().String())
+		stopDoctor = startDoctorLoop(*doctorInterval, *dbPath, *doctorRepo, "http://"+ln.Addr().String(), chRouter.NotifyDoctor)
 		defer stopDoctor()
 	}
 
