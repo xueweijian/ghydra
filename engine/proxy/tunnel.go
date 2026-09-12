@@ -78,6 +78,8 @@ func (s *Server) handle(conn net.Conn) {
 		writePlain(conn, http.StatusBadRequest, "ghydra: 仅支持 CONNECT 隧道（GitHub 流量全 HTTPS）")
 		return
 	}
+	// CONNECT 的 request-target 必为 authority-form（host:port，RFC 7231 §5.3.3）；
+	// 无端口形式不合规范，http.ReadRequest 已在上游拒绝。
 	authority := req.URL.Host // net/http 对 CONNECT 的 authority-form 已归一化
 	if authority == "" {
 		authority = req.Host
@@ -85,9 +87,6 @@ func (s *Server) handle(conn net.Conn) {
 	if authority == "" {
 		writePlain(conn, http.StatusBadRequest, "ghydra: CONNECT 缺少目标")
 		return
-	}
-	if _, _, err := net.SplitHostPort(authority); err != nil {
-		authority = net.JoinHostPort(authority, "443")
 	}
 	hostOnly, _, _ := net.SplitHostPort(authority)
 

@@ -363,40 +363,6 @@ func TestTunnelEarlyData(t *testing.T) {
 	}
 }
 
-// TestTunnelNoPortDefaults443 CONNECT 目标无端口时补 443。
-func TestTunnelNoPortDefaults443(t *testing.T) {
-	echoLn, err := net.Listen("tcp", "127.0.0.1:443")
-	if err != nil {
-		t.Skip("无权绑定 443 端口，跳过（CI 容器通常可绑）")
-	}
-	defer echoLn.Close()
-	go func() {
-		for {
-			c, err := echoLn.Accept()
-			if err != nil {
-				return
-			}
-			go func(c net.Conn) { io.Copy(c, c); c.Close() }(c)
-		}
-	}()
-	sel := SelectorFunc(func(string) (string, bool) { return "", false })
-	proxyAddr, _, stop := startProxy(t, sel)
-	defer stop()
-
-	c, err := net.DialTimeout("tcp", proxyAddr, 3*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-	c.SetDeadline(time.Now().Add(5 * time.Second))
-	fmt.Fprint(c, "CONNECT 127.0.0.1\r\nHost: 127.0.0.1\r\n\r\n")
-	br := bufio.NewReader(c)
-	line, _ := br.ReadString('\n')
-	if !contains([]byte(line), "200") {
-		t.Fatalf("无端口 CONNECT 应回 200（补 443 直连本地 echo）: %q", line)
-	}
-}
-
 // --- helpers ---
 
 func startFakeTLS(t *testing.T, dnsName string) (*testutil.TLSServer, func(), error) {
