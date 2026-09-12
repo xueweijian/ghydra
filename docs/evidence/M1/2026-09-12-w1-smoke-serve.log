@@ -1,0 +1,11 @@
+2026/09/12 13:19:09.971921 ghydra serve 已启动: 127.0.0.1:19801 | 加速域名 6 条 | backlog 4096 | dial-timeout 7s
+2026/09/12 13:19:09.975304 将系统代理指向 127.0.0.1:19801 即可使用（一键接管 = W3 ghydra on）
+2026/09/12 13:19:15.187053 [conn#1] github.com -> github.com:443 accel=true dial=161.6ms rx=587639B tx=832B OK
+2026/09/12 13:19:16.642801 [conn#2] api.github.com -> api.github.com:443 accel=true dial=219.3ms rx=6937B tx=809B OK
+2026/09/12 13:19:17.167441 [conn#3] codeload.github.com -> codeload.github.com:443 accel=true dial=167.2ms rx=3820B tx=813B OK
+2026/09/12 13:19:17.551210 [conn#4] avatars.githubusercontent.com -> avatars.githubusercontent.com:443 accel=true dial=157.7ms rx=5461B tx=819B OK
+2026/09/12 13:19:18.863390 [conn#5] objects.githubusercontent.com -> objects.githubusercontent.com:443 accel=true dial=229.5ms rx=5628B tx=819B OK
+2026/09/12 13:19:19.163574 [conn#6] raw.githubusercontent.com -> raw.githubusercontent.com:443 accel=true dial=148.4ms rx=5528B tx=817B OK
+2026/09/12 13:19:19.422277 [conn#7] www.baidu.com -> www.baidu.com:443 accel=false dial=111.8ms rx=7301B tx=780B OK
+2026/09/12 13:19:20.411889 收到退出信号，正在关闭…
+2026/09/12 13:19:20.412106 已退出，共服务 7 条连接
