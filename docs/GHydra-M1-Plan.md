@@ -1,7 +1,7 @@
 # GHydra M1 实施方案 · 直连通道产品化
 > **用途**：里程碑 M1（PRD §8，第 3–6 周）的完整实施规划。评审通过后按周执行，每周结束回填状态。
 > **关联**：`GHydra-PRD.md` §8 M1、`GHydra-TechReference.md` 模块卡片 M2/M3/M8、`GHydra-DevWorkflow.md` 四铁律。
-> **状态**：草案（2026-09-12），待用户评审。
+> **状态**：执行中（2026-09-12）。**W1 已收官**（内核/rules/listener/serve/loadtest-connect + CI 三平台绿 + 真网冒烟 6/6，证据 `docs/evidence/M1/`）；cobra 改为手写路由（TechReference §3 已回填）。W2 设计见 `GHydra-M1-W2-Design.md`。
 
 ---
 

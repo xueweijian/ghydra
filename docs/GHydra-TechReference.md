@@ -163,7 +163,7 @@
 | SQLite | `modernc.org/sqlite` | pure-Go，免 CGO，交叉编译友好 |
 | 签名 | `filippo.io/ed25519` | minisign 兼容格式 |
 | HTTP/2 | `golang.org/x/net/http2` | 仅 M4 需要 |
-| CLI | `github.com/spf13/cobra` | M1 阶段 |
+| CLI | **手写子命令路由** | 2026-09-12 拍板不引入 cobra：手写路由已工作良好，15MB 红线优先，依赖白名单保持干净 |
 | TLS 解析 | **手写** | 不用 utls（合规审计考量） |
 | GUI | Wails（v2.13+ 保底 / v3 视 M3 时转正与否）+ SolidJS | 纯 Go 壳；引擎独立进程，经本地 HTTP API 通信 |
 
