@@ -70,7 +70,7 @@ func (a rawState) equal(b rawState) bool {
 	return a.autoConfigURL == b.autoConfigURL && a.autoConfigOK == b.autoConfigOK &&
 		a.proxyServer == b.proxyServer && a.proxyServerOK == b.proxyServerOK &&
 		a.proxyOverride == b.proxyOverride && a.overrideOK == b.overrideOK &&
-		a.proxyEnable == b.proxyEnable && a.autoDetect == b.autoDetect && a.autoDetectOK == b.autoDetectOK
+		a.proxyEnable == b.proxyEnable && a.autoDetect&1 == b.autoDetect&1 && a.autoDetectOK == b.autoDetectOK
 }
 
 func restoreRaw(t *testing.T, orig rawState) {
@@ -179,7 +179,7 @@ func TestIntegrationOnOffLifecycle(t *testing.T) {
 		return rawCurrent().autoConfigURL == wantPAC
 	})
 	r := rawCurrent()
-	if r.proxyEnable != 0 || r.autoDetect != 0 {
+	if r.proxyEnable != 0 || r.autoDetect&1 != 0 {
 		t.Errorf("接管态应关手动代理与 WPAD: ProxyEnable=%d AutoDetect=%d", r.proxyEnable, r.autoDetect)
 	}
 	if d := readServeJSON(t, home); d == nil || d.Port != testPort {

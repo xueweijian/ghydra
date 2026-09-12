@@ -45,7 +45,9 @@ func currentOS() (Setting, error) {
 	if en, _, err := k.GetIntegerValue("ProxyEnable"); err == nil && en == 1 {
 		s.ProxyEnabled = true
 	}
-	if ad, _, err := k.GetIntegerValue("AutoDetect"); err == nil && ad == 1 {
+	// AutoDetect 存在位标志归一化：WinINet 会把 1 规范化为 9
+	//（bit3 为内部标志；windows-2022 runner 实测）。按 bit0 判启用。
+	if ad, _, err := k.GetIntegerValue("AutoDetect"); err == nil && ad&1 == 1 {
 		s.AutoDetect = true
 	}
 	return s, nil

@@ -11,6 +11,7 @@
 package sysproxy
 
 import (
+	"fmt"
 	"testing"
 
 	"golang.org/x/sys/windows/registry"
@@ -88,6 +89,13 @@ func assertEq(t *testing.T, name, got, want string) {
 	}
 }
 
+// dump 逐字段输出（Setting.String() 不含 Override/AutoDetect，
+// 排查字段级差异必须用它——首跑 CI 的教训）。
+func dump(s Setting) string {
+	return fmt.Sprintf("Server=%q Enabled=%t Override=%q PAC=%q WPAD=%t",
+		s.ProxyServer, s.ProxyEnabled, s.ProxyOverride, s.PACURL, s.AutoDetect)
+}
+
 // TestIntegrationPACTakeover PAC 接管全量语义：写入 AutoConfigURL，
 // 删/关手动代理与 WPAD，恢复后完全回到原值。
 func TestIntegrationPACTakeover(t *testing.T) {
@@ -110,7 +118,7 @@ func TestIntegrationPACTakeover(t *testing.T) {
 		t.Fatalf("Current: %v", err)
 	}
 	if cur != pre {
-		t.Fatalf("预置后 Current 不一致:\n want=%+v\n got =%+v", pre, cur)
+		t.Fatalf("预置后 Current 不一致:\n want=%s\n got =%s", dump(pre), dump(cur))
 	}
 
 	// PAC 接管（ghydra on 的实际输入）
@@ -123,8 +131,8 @@ func TestIntegrationPACTakeover(t *testing.T) {
 	if r.proxyEnable != 0 {
 		t.Errorf("PAC 模式 ProxyEnable 应为 0, got %d", r.proxyEnable)
 	}
-	if r.autoDetect != 0 {
-		t.Errorf("PAC 模式 AutoDetect 应为 0（避免 WPAD 抢答）, got %d", r.autoDetect)
+	if r.autoDetect&1 != 0 {
+		t.Errorf("PAC 模式 AutoDetect 应关闭（bit0=0）, got %d", r.autoDetect)
 	}
 	assertEq(t, "ProxyServer（值保留）", r.proxyServer, "10.0.0.9:3128")
 
@@ -138,8 +146,8 @@ func TestIntegrationPACTakeover(t *testing.T) {
 	if r2.proxyEnable != 1 {
 		t.Errorf("恢复 ProxyEnable 应为 1, got %d", r2.proxyEnable)
 	}
-	if r2.autoDetect != 1 {
-		t.Errorf("恢复 AutoDetect 应为 1, got %d", r2.autoDetect)
+	if r2.autoDetect&1 != 1 {
+		t.Errorf("恢复 AutoDetect 应启用（bit0=1）, got %d", r2.autoDetect)
 	}
 	if r2.autoConfigOK {
 		t.Errorf("恢复后 AutoConfigURL 应被删除, got %q", r2.autoConfigURL)
@@ -208,7 +216,7 @@ func TestIntegrationClearToZero(t *testing.T) {
 		t.Fatalf("Apply(零态): %v", err)
 	}
 	r := rawCurrent()
-	if r.proxyEnable != 0 || r.autoDetect != 0 {
+	if r.proxyEnable != 0 || r.autoDetect&1 != 0 {
 		t.Errorf("零态应全关: ProxyEnable=%d AutoDetect=%d", r.proxyEnable, r.autoDetect)
 	}
 	if r.autoConfigOK {
