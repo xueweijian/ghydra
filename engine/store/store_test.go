@@ -186,6 +186,36 @@ func TestSnapshotRoundtrip(t *testing.T) {
 	}
 }
 
+// TestLoadTakeoverState W3a：接管态查询（Boost 页大开关数据源）。
+// on = 快照行存在（与 ensureReconcile 崩溃对账同源判定）。
+func TestLoadTakeoverState(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	if on, _, err := s.LoadTakeoverState(); err != nil || on {
+		t.Fatalf("初始应未接管: on=%v err=%v", on, err)
+	}
+	if err := s.SaveSnapshotJSON(`{}`); err != nil {
+		t.Fatal(err)
+	}
+	on, takenAt, err := s.LoadTakeoverState()
+	if err != nil || !on {
+		t.Fatalf("快照存在应已接管: on=%v err=%v", on, err)
+	}
+	if time.Since(takenAt) > time.Minute {
+		t.Fatalf("taken_at 应为近期: %v", takenAt)
+	}
+	if err := s.DeleteSnapshot(); err != nil {
+		t.Fatal(err)
+	}
+	if on2, _, _ := s.LoadTakeoverState(); on2 {
+		t.Fatal("删除快照后应未接管")
+	}
+}
+
 func TestDoctorRecordAndSummary(t *testing.T) {
 	s, err := Open("")
 	if err != nil {

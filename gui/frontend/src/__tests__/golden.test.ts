@@ -36,12 +36,16 @@ describe("golden ↔ types.ts 契约锁定", () => {
   it("status.json 满足 ApiStatus", () => {
     const s: ApiStatus = goldenStatus as ApiStatus;
     expect(s.api_version).toBe(1);
+    expect(s.version).toBe("0.5.0-beta.1");
     expect(s.listen).toContain("127.0.0.1");
     expect(s.channel.state).toBe("Closed");
     expect(s.rules.version).toBe(10);
     expect(s.rules.source).toBe("disk");
     expect(s.rules.stale).toBe(false);
     expect(s.pools!["github.com"].ips[0].state).toBe("Active");
+    // W3a：接管态厚形态锁定（false 形态由 smoke 真 serve 断言）
+    expect(s.takeover.on).toBe(true);
+    expect(s.takeover.since).toBe("2026-09-13T11:30:00Z");
   });
 
   it("rules_snapshot.json 满足 RulesSnapshot", () => {

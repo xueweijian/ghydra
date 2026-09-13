@@ -53,6 +53,10 @@ import (
 	"github.com/xueweijian/ghydra/engine/sysproxy"
 )
 
+// Version 构建版本（CI release 打 tag 时 -ldflags 注入；dev 兜底）。
+// W4 自更新对比源；W3a 起 status 帧/设置页展示。
+var Version = "dev"
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	if len(os.Args) < 2 {
@@ -384,6 +388,7 @@ func serveCmd(args []string) {
 		Status: func() api.ApiStatus {
 			st := api.ApiStatus{
 				APIVersion: api.APIVersion,
+				Version:    Version,
 				Listen:     actualAddr,
 				Scheduler:  *schedOn,
 				Conns:      conns.Load(),
@@ -398,6 +403,15 @@ func serveCmd(args []string) {
 					pools[h] = api.PoolSnapshot{Sticky: sc.StickyIP(h), IPs: mapIPs(sc.Snapshot(h))}
 				}
 				st.Pools = pools
+			}
+			// 接管态：on = 快照行存在（ensureReconcile 同源判定）。1s tick 一次
+			// 单行 SELECT，本地 SQLite 微秒级可忽略；库不可用恒 false。
+			if ruleDB != nil {
+				if on, takenAt, err := ruleDB.LoadTakeoverState(); err == nil && on {
+					st.Takeover = api.TakeoverState{On: true, Since: takenAt.UTC().Format(time.RFC3339)}
+				} else if err != nil {
+					log.Printf("[api] 接管态查询失败: %v", err)
+				}
 			}
 			return st
 		},

@@ -42,7 +42,9 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -H "X-GHydra-Token: wrong" http://
 [ "$code" = "401" ] || fail "错 token 应 401"
 body=$(curl -s -H "X-GHydra-Token: $TOK" http://127.0.0.1:$PORT/api/status)
 echo "$body" | grep -q '"api_version":1' || fail "status 形状: $body"
-pass "token 读 /api/status → 200 + 形状"
+echo "$body" | grep -q '"version":"dev"' || fail "status.version: $body"
+echo "$body" | grep -q '"takeover":{"on":false,"since":""}' || fail "status.takeover 未接管零形态: $body"
+pass "token 读 /api/status → 200 + 形状（含 version/takeover W3a）"
 
 # 3. Host 伪造 → 403
 code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: evil.example.com" -H "X-GHydra-Token: $TOK" http://127.0.0.1:$PORT/api/status)

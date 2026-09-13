@@ -25,6 +25,7 @@ func fixedStatus() ApiStatus {
 	trip := fixedNow().Add(-3 * time.Minute)
 	return ApiStatus{
 		APIVersion: APIVersion,
+		Version:    "0.5.0-beta.1",
 		Listen:     "127.0.0.1:9801",
 		Scheduler:  true,
 		Conns:      42,
@@ -45,6 +46,9 @@ func fixedStatus() ApiStatus {
 		},
 		CDN:   "https://gh.1ciyuan.cn/",
 		Rules: RulesStatus{Version: 10, Source: "disk", Stale: false},
+		// golden 锁定「接管中」厚形态（on=true + since 有值）；false 形态
+		// 由 smoke_w1 真 serve 断言。
+		Takeover: TakeoverState{On: true, Since: "2026-09-13T11:30:00Z"},
 	}
 }
 

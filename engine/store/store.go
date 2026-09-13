@@ -328,9 +328,22 @@ ON CONFLICT(id) DO UPDATE SET taken_at=excluded.taken_at, setting_json=excluded.
 	return err
 }
 
+// LoadTakeoverState 接管态查询（W3a）：on = 快照行存在——与
+// ensureReconcile 崩溃对账同源判定，零新语义。takenAt 仅在 on=true 有效。
+func (s *Store) LoadTakeoverState() (on bool, takenAt time.Time, err error) {
+	var ms int64
+	err = s.db.QueryRow(`SELECT taken_at FROM sysproxy_snapshot WHERE id=1`).Scan(&ms)
+	if err == sql.ErrNoRows {
+		return false, time.Time{}, nil
+	}
+	if err != nil {
+		return false, time.Time{}, err
+	}
+	return true, time.UnixMilli(ms), nil
+}
+
 // LoadSnapshotJSON 读快照 JSON；不存在或为 W4.5 之前的旧行返回 ok=false。
-func (s *Store) LoadSnapshotJSON() (settingJSON string, ok bool, err error) {
-	err = s.db.QueryRow(`SELECT setting_json FROM sysproxy_snapshot WHERE id=1`).
+func (s *Store) LoadSnapshotJSON() (settingJSON string, ok bool, err error) {	err = s.db.QueryRow(`SELECT setting_json FROM sysproxy_snapshot WHERE id=1`).
 		Scan(&settingJSON)
 	if err == sql.ErrNoRows {
 		return "", false, nil

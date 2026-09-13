@@ -33,6 +33,7 @@ export interface ChannelSnapshot {
 
 export interface ApiStatus {
   api_version: number;
+  version: string;
   listen: string;
   scheduler: boolean;
   conns: number;
@@ -41,6 +42,13 @@ export interface ApiStatus {
   channel: ChannelSnapshot;
   cdn?: string;
   rules: RulesStatus;
+  takeover: TakeoverState;
+}
+
+// W3a：系统代理接管态（Boost 页大开关数据源；SSE status 帧同形状）。
+export interface TakeoverState {
+  on: boolean;
+  since: string; // RFC3339 UTC，on=false 时空
 }
 
 // M3-W2 规则热更新（信任地板快照）

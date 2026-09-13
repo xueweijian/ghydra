@@ -16,6 +16,7 @@ const APIVersion = 1
 // ApiStatus daemon 状态全景（SSE status 帧同形状）。
 type ApiStatus struct {
 	APIVersion int                     `json:"api_version"`
+	Version    string                  `json:"version"` // 二进制版本（ldflags 注入，dev 兜底；W4 自更新地基）
 	Listen     string                  `json:"listen"`
 	Scheduler  bool                    `json:"scheduler"`
 	Conns      int64                   `json:"conns"`
@@ -24,6 +25,14 @@ type ApiStatus struct {
 	Channel    ChannelSnapshot         `json:"channel"`
 	CDN        string                  `json:"cdn,omitempty"`
 	Rules      RulesStatus             `json:"rules"`
+	Takeover   TakeoverState           `json:"takeover"` // 系统代理接管态（W3a）
+}
+
+// TakeoverState 接管态：on = 快照行存在（崩溃对账同源判定）。
+// 不带 mode——快照存恢复凭证（原值），mode 不入快照（W3-Design §3.1）。
+type TakeoverState struct {
+	On    bool   `json:"on"`
+	Since string `json:"since"` // RFC3339 UTC，on=false 时空
 }
 
 // RulesStatus status/SSE status 帧内的规则摘要（M3-W2：热更新可观测）。
