@@ -3,6 +3,7 @@ package fsx
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -26,10 +27,13 @@ func TestWriteFileAtomicRoundtrip(t *testing.T) {
 	if len(entries) != 1 || entries[0].Name() != "state.json" {
 		t.Errorf("残留文件: %v", entries)
 	}
-	// 权限
-	fi, _ := os.Stat(path)
-	if fi.Mode().Perm() != 0o644 {
-		t.Errorf("perm = %v", fi.Mode().Perm())
+	// 权限（Windows 文件系统无 POSIX 位，chmod 只映射只读——跳过，
+	// W1 教训：断言别写平台敏感值）
+	if runtime.GOOS != "windows" {
+		fi, _ := os.Stat(path)
+		if fi.Mode().Perm() != 0o644 {
+			t.Errorf("perm = %v", fi.Mode().Perm())
+		}
 	}
 }
 

@@ -99,7 +99,20 @@ jobs:
           go-version: "1.24"
       - name: 升级演练（正常/回滚/投毒/daemon 对账）
         shell: bash   # pwsh 坑第 3+1 次：Windows 步骤一律显式 bash
-        run: sh scripts/smoke_w4.sh
+        run: |
+          sh scripts/smoke_w4.sh 2>&1 | tee /tmp/smoke_w4.out
+          exit ${PIPESTATUS[0]}
+      - name: push smoke log to branch（失败时；匿名 git fetch 可读）
+        if: failure()
+        shell: bash
+        run: |
+          cp /tmp/smoke_w4.out smoke-w4-failure.out
+          git config user.email "ci@ghydra.local"
+          git config user.name "ci-bot"
+          git checkout -B ci-failure-log
+          git add -f smoke-w4-failure.out
+          git commit -m "smoke_w4 failure log (run ${{ github.run_id }}, ${{ matrix.os }})"
+          git push -f origin ci-failure-log
 
   # W4.5：Windows 平台行为证明（无 Windows 真机期间的开发替代）。
   # 真实跑注册表接管/恢复 + on/off 生命周期 + kill -9 崩溃对账。
