@@ -37,23 +37,23 @@ jobs:
         with:
           go-version: "1.24"
       - run: go vet ./...
-      - name: go test（任何失败形态的摘要进 job summary，便于无日志权限时远程定位）
+      - name: go test（全文失败输出进 job summary + artifact 双保险）
         run: |
           set +e
           go test ./... -race -count=1 -v > /tmp/test.out 2>&1
           code=$?
-          tail -40 /tmp/test.out
           if [ $code -ne 0 ]; then
-            {
-              echo "## go test exit $code"
-              grep -nE -- "--- FAIL|DATA RACE|panic:|fatal error|^FAIL|^ok " /tmp/test.out | head -60
-              echo "--- context ---"
-              grep -B4 -A12 -m2 -E -- "--- FAIL|DATA RACE|panic:|fatal error" /tmp/test.out | head -120
-            } >> "$GITHUB_STEP_SUMMARY"
+            cp /tmp/test.out test-failure.out
+            cat test-failure.out >> "$GITHUB_STEP_SUMMARY"
             exit $code
           fi
-
-  # M3-W1：控制 API 端到端冒烟（token/Host/SSE/dist 托管/旧端点回归）。
+      - name: upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-out-${{ matrix.os }}
+          path: /tmp/test.out
+          retention-days: 3
   api-smoke:
     runs-on: ubuntu-latest
     steps:
