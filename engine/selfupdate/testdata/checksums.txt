@@ -1,0 +1,2 @@
+467e2885a820ec42fdfa81095118d2e36719646f16d760e4c99ad0d0768f9082  ghydra-windows-amd64.zip
+6d8bf28c2da4bd7bf649c9d3168daab462e1bd007fad78759bf4179c5d3c1f41  ghydra-linux-amd64.tar.gz

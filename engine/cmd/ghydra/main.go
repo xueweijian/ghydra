@@ -63,6 +63,14 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+	// 自更新启动钩子（子命令路由之前）：崩溃清扫 + pending 自检 +
+	// ×3 失败自动回滚（W4 设计 §2.3）。幂等，无状态时零开销。
+	// 递归护栏：①自检子进程（env 标记）不再进钩子；②只读的 version
+	// 子命令跳过（否则 selfCheck→version→BootHook→selfCheck 无限套娃，
+	// 冒烟实证 signal: killed）。
+	if os.Getenv("GHYDRA_SELF_CHECK_CHILD") == "" && os.Args[1] != "version" {
+		bootSelfUpdate(defaultDBPath(), os.Args[1] == "serve")
+	}
 	switch os.Args[1] {
 	case "bench":
 		benchCmd(os.Args[2:])
@@ -82,6 +90,10 @@ func main() {
 		serveCmd(os.Args[2:])
 	case "token":
 		tokenCmd(os.Args[2:])
+	case "version":
+		versionCmd(os.Args[2:])
+	case "update":
+		updateCmd(os.Args[2:])
 	case "on":
 		onCmd(os.Args[2:])
 	case "off":
@@ -108,6 +120,8 @@ func usage() {
   ghydra git enable|disable|status                   insteadOf 集成（fetch→CDN/push→直连）
   ghydra ssh enable|disable|status                   ssh config 443 写入（22 断 443 通时）
   ghydra status                                      last_good 持久化观察口
+  ghydra version                                     版本（自更新自检契约）
+  ghydra update [check|rollback] [--pre] [--allow-downgrade]  自更新（永不自毁）
   ghydra doctor [--mode direct|proxy|both]          六场景探针+直连对照+分类报告
   ghydra bench [--mode bootstrap|direct|proxy]     自举链或六域名存活报告
   ghydra poc [--listen ADDR] [--rewrite-sni N]      裸 SNI 转发器（调试工具）

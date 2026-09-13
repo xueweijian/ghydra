@@ -147,3 +147,10 @@ per-install 随机 CA（平台密钥保护、不同步）+ 三平台一键信任
 | 3 | 托盘架构 | spike 按 A1→A2→C（W0 已终局：v3 原生三件套） |
 | 4 | Wails 版本 | **只用 v3**（2026-09-13 用户拍板，覆盖原规则 #2）：beta.20 锁定，升级须 CI 三平台全绿，3.0 正式版后迁移 |
 | 5 | 开机自启 | 初拍自研 ~100 行；随 v3 拍板被 AutostartManager 原生实现取代（D2） |
+| 6 | win 安装位置（W4） | `%LOCALAPPDATA%\Programs\GHydra` 用户级——免 UAC，自更新免提权（2026-09-13 用户同意建议） |
+| 7 | 新版启动失败（W4） | 自动回滚 + bad_version 跳过（"永不自毁"核心，2026-09-13 用户同意建议） |
+| 8 | prerelease（W4） | 默认跳过，`--pre` 显式开启（beta 阶段正好演练升级链，2026-09-13 用户同意建议） |
+| 9 | Homebrew tap（W4） | v1.0 延后，公测有 mac 用户呼声再做（2026-09-13 用户同意建议） |
+| 10 | GUI 更新流（W4） | 进 v1.0，放 W4p2 末尾，砍线不伤 CLI 主链（2026-09-13 用户同意建议） |
+
+W4 release 签名钥匙（与 rules 钥匙分离）：公钥冻结 `engine/selfupdate/keys.go`，私钥离线 `shared/ghydra-keys/ghydra-release.key`（key_id F0716070E4E793E7）。 |
