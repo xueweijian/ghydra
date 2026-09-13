@@ -44,6 +44,16 @@ function jsonError(status: number, msg: string): Response {
   });
 }
 
+/**
+ * 路径形态 token：/t/<TOKEN>/<目标路径>。
+ * 返回 token 与剥掉 token 段后的剩余路径；非该形态返回 null。
+ */
+export function extractPathToken(pathname: string): { token: string; rest: string } | null {
+  const m = /^\/t\/([^/]+)(\/.*)?$/.exec(pathname);
+  if (!m) return null;
+  return { token: m[1], rest: m[2] ?? "/" };
+}
+
 export async function handleRequest(
   request: Request,
   env: Env,
@@ -54,20 +64,28 @@ export async function handleRequest(
     return jsonError(405, "只支持 GET/HEAD");
   }
 
-  // 可选鉴权
+  // 可选鉴权（两种形态，满足其一即过）：
+  //  1. Authorization: Bearer <TOKEN>
+  //  2. 路径前缀 /t/<TOKEN>/<目标>（ghydra 客户端零改动：--cdn 用带 token
+  //     的前缀即可，get/serve/doctor 全链路通用）
+  let authViaBearer = false;
+  let pathname = new URL(request.url).pathname;
   if (env.TOKEN) {
-    const url = new URL(request.url);
-    const q = url.searchParams.get("token");
+    const q = new URL(request.url).searchParams.get("token");
     const auth = request.headers.get("authorization");
     const bearer = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
-    if (q !== env.TOKEN && bearer !== env.TOKEN) {
+    const pt = extractPathToken(pathname);
+    if (q === env.TOKEN || bearer === env.TOKEN || (pt !== null && pt.token === env.TOKEN)) {
+      authViaBearer = bearer === env.TOKEN;
+      if (pt !== null && pt.token === env.TOKEN) pathname = pt.rest;
+    } else {
       return jsonError(401, "token 不匹配");
     }
   }
 
   // 目标解析（pathname+search 合并：目标自带 query 时 search 属于目标 URL）
   const u = new URL(request.url);
-  const target = parseTarget(u.pathname + u.search, allowedHosts(env.WHITELIST));
+  const target = parseTarget(pathname + u.search, allowedHosts(env.WHITELIST));
   if (!target) return jsonError(403, "目标 URL 不在白名单或形态非法");
 
   const cacheEnabled = env.CACHE !== "off" && deps.cache !== null;
@@ -83,9 +101,11 @@ export async function handleRequest(
     }
   }
 
-  // 上游请求头（白名单透传）
+  // 上游请求头（白名单透传；worker 自己消费的 Bearer 不外泄给源站，
+  // 避免随机 token 被当作 GitHub 凭据引发语义混乱）
   const upHeaders = new Headers();
   for (const k of PASS_REQ_HEADERS) {
+    if (authViaBearer && k === "authorization") continue;
     const v = request.headers.get(k);
     if (v) upHeaders.set(k, v);
   }

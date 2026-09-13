@@ -14,5 +14,8 @@ routes = [
 
 [vars]
 # WHITELIST = "mirror.example.com"   # 逗号分隔增补 host（只增不删默认集）
-# TOKEN = "change-me"                # 设置后要求 ?token= 或 Bearer 鉴权
+# TOKEN = "change-me"                # 建议 `wrangler secret put TOKEN`（不落 repo）
+#                                    # 客户端形态二选一：
+#                                    #   前缀: https://<worker>/t/<TOKEN>/  ← ghydra --cdn 直接用
+#                                    #   头部: Authorization: Bearer <TOKEN>（不外泄给源站）
 CACHE = "on"

@@ -322,3 +322,59 @@ describe("handleRequest 缓存", () => {
     expect(upstreamCalls).toBe(2);
   });
 });
+
+describe("handleRequest 路径 token（/t/<TOKEN>/）", () => {
+  const env = { TOKEN: "s3cret" };
+  // 每用例独立 FakeFetch：调用记录不跨用例累积
+  const fresh = () => {
+    const ff = new FakeFetch([
+      { match: (u) => u.hostname === "github.com", reply: () => ok200() },
+    ]);
+    return { ff, deps: { fetchLike: ff.fetchLike, cache: null as Deps["cache"] } };
+  };
+
+  it("正确路径 token → 200，目标 URL 正确剥离", async () => {
+    const { ff, deps } = fresh();
+    const r = await call(env, deps, "/t/s3cret" + zipURL);
+    expect(r.status).toBe(200);
+    expect(ff.calls[0].url).toBe("https://github.com/rclone/rclone/releases/download/v1.67.0/rclone-v1.67.0-linux-arm64.zip");
+  });
+
+  it("错误路径 token → 401", async () => {
+    const { deps } = fresh();
+    const r = await call(env, deps, "/t/wrong" + zipURL);
+    expect(r.status).toBe(401);
+  });
+
+  it("TOKEN 开启且无任何 token → 401", async () => {
+    const { deps } = fresh();
+    const r = await call(env, deps, zipURL);
+    expect(r.status).toBe(401);
+  });
+
+  it("TOKEN 未开启时 /t/ 形态不是合法目标 → 403（不误认）", async () => {
+    const { deps } = fresh();
+    const r = await call({}, deps, "/t/s3cret" + zipURL);
+    expect(r.status).toBe(403);
+  });
+
+  it("Bearer 通过 worker 鉴权后不外泄给源站", async () => {
+    const { ff, deps } = fresh();
+    const r = await call(env, deps, zipURL, {
+      headers: { authorization: "Bearer s3cret" },
+    });
+    expect(r.status).toBe(200);
+    const sent = new Headers(ff.calls[0].init?.headers as HeadersInit);
+    expect(sent.get("authorization")).toBeNull();
+  });
+
+  it("非 worker token 的 Authorization 照常透传（GitHub 私有库语义保留）", async () => {
+    const { ff, deps } = fresh();
+    const r = await call({}, deps, zipURL, {
+      headers: { authorization: "token ghp_realgithubtoken" },
+    });
+    expect(r.status).toBe(200);
+    const sent = new Headers(ff.calls[0].init?.headers as HeadersInit);
+    expect(sent.get("authorization")).toBe("token ghp_realgithubtoken");
+  });
+});

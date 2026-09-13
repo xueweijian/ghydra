@@ -52,7 +52,7 @@ ghydra serve --cdn https://gh.yourdomain.com/
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `WHITELIST` | 空 | 逗号分隔增补 host（只增不删默认十域） |
-| `TOKEN` | 空 | 设置后要求 `?token=` 或 `Authorization: Bearer`（防配额被蹭） |
+| `TOKEN` | 空 | 防配额被蹭。建议 `wrangler secret put TOKEN`（加密存储，不进 repo）。客户端两种用法：①**前缀形态** `https://<worker>/t/<TOKEN>/`（ghydra `--cdn` 直接可用）②`Authorization: Bearer <TOKEN>`（worker 消费后不转发源站，GitHub 私有库 token 语义不受影响） |
 | `CACHE` | `on` | `off` 全禁用缓存 |
 
 ## 行为契约（与 GHydra 引擎的协议）
