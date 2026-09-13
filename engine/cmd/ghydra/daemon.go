@@ -150,16 +150,23 @@ func spawnServe(port int, dbPath string) (int, error) {
 	cmd.SysProcAttr = detachAttr() // 平台差异见 spawn_{windows,unix}.go
 	// 托管 serve 的输出落盘（append）：detached 子进程默认 /dev/null——
 	// daemon 是产品常驻进程，日志必须可追溯（W4 CI 考古同样受益）。
+	// ⚠️ fd 生命周期：必须在 Start() 之后才关父进程这份拷贝——提前关会
+	// 让 fork/exec 拿到已关闭的 fd（macOS 实证 "bad file descriptor"）。
+	var logFile *os.File
 	if d := ghydraDir(); d != "" {
 		if err := os.MkdirAll(d, 0o755); err == nil {
 			if f, ferr := os.OpenFile(filepath.Join(d, "serve.log"),
 				os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); ferr == nil {
 				cmd.Stdout, cmd.Stderr = f, f
-				go f.Close() // 子进程继承 fd 后本进程即可关（Wait 前后皆可）
+				logFile = f
 			}
 		}
 	}
-	if err := cmd.Start(); err != nil {
+	err = cmd.Start()
+	if logFile != nil {
+		logFile.Close() // 子进程已持有自己的 fd 副本
+	}
+	if err != nil {
 		return 0, err
 	}
 	go cmd.Wait() // 回收子进程资源（不阻塞）

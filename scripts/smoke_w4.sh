@@ -61,7 +61,15 @@ load_state() { . "$STATE"; }
 home_native() {
   if [ -n "$D_NATIVE" ]; then echo "$D_NATIVE"; else echo "$D"; fi
 }
-run()  { HOME="$(home_native)" "$D/ghydra$EXT" "$@"; }
+# Windows 上 Go 的 os.UserHomeDir 读 USERPROFILE（不是 HOME，Go 官方行为）——
+# 两变量都要设，否则状态文件落到真实用户 profile（CI windows 实证）。
+run() {
+  if [ "$(go env GOOS)" = "windows" ]; then
+    HOME="$(home_native)" USERPROFILE="$(home_native)" "$D/ghydra$EXT" "$@"
+  else
+    HOME="$(home_native)" "$D/ghydra$EXT" "$@"
+  fi
+}
 
 cmd_setup() {
   BIN=$(mktemp -d /tmp/w4bin.XXXXXX)
@@ -158,7 +166,7 @@ cmd_scenario_c() {
   D2=$(mktemp -d /tmp/w4c.XXXXXX)
   # B 回滚后主位已是 1.0.0（RollbackSwap: old→exe, exe→.bad）
   cp "$D/ghydra$EXT" "$D2/ghydra$EXT"
-  [ "$(HOME="$D2" "$D2/ghydra$EXT" version)" = "ghydra version 1.0.0" ] || fail "C 前置：主位应仍为 1.0.0"
+  [ "$(HOME="$D2" USERPROFILE="$D2" "$D2/ghydra$EXT" version)" = "ghydra version 1.0.0" ] || fail "C 前置：主位应仍为 1.0.0"
   "$BIN/releasesrv$EXT" -listen "127.0.0.1:$PORT_POISON" -newbin "$BIN/ghydra-new$EXT" \
     -version v1.0.1 -key "$KEY" -tamper-asset >"$D2/srv.log" 2>&1 &
   P_PID=$!
@@ -166,11 +174,11 @@ cmd_scenario_c() {
     curl -s -o /dev/null "http://127.0.0.1:$PORT_POISON/files/checksums.txt" && break
     sleep 0.2
   done
-  HOME="$D2" "$D2/ghydra$EXT" update --api "http://127.0.0.1:$PORT_POISON/repos/xueweijian/ghydra" \
+  HOME="$D2" USERPROFILE="$D2" "$D2/ghydra$EXT" update --api "http://127.0.0.1:$PORT_POISON/repos/xueweijian/ghydra" \
     --trust-host 127.0.0.1 --cdn "" --db "" >"$D2/apply.log" 2>&1 && fail "投毒 apply 应失败" || true
   { grep -q "校验失败" "$D2/apply.log" || grep -q "sha256" "$D2/apply.log"; } \
     || { cat "$D2/apply.log"; fail "应报 sha256 拒"; }
-  [ "$(HOME="$D2" "$D2/ghydra$EXT" version)" = "ghydra version 1.0.0" ] || fail "投毒拒后版本零破坏"
+  [ "$(HOME="$D2" USERPROFILE="$D2" "$D2/ghydra$EXT" version)" = "ghydra version 1.0.0" ] || fail "投毒拒后版本零破坏"
   [ ! -f "$D2/ghydra$EXT.old" ] || fail "投毒拒不应产生 old 凭证"
   kill $P_PID 2>/dev/null || true
   rm -rf "$D2"
@@ -198,6 +206,10 @@ cmd_scenario_d() {
   run update --api "$API" --trust-host 127.0.0.1 --cdn "" --db "$D/db.sqlite" >"$D/apply2.log" 2>&1 \
     || { cat "$D/apply2.log"; echo "== serve.log（场景 serve）=="; cat "$D/serve.log"
          echo "== .ghydra/serve.log（spawn daemon）=="; cat "$D/.ghydra/serve.log" 2>/dev/null
+         echo "== ps ghydra =="; ps aux 2>/dev/null | grep "[g]hydra" | head -10
+         echo "== listeners =="; (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep 1971 | head
+         echo "== serve.json =="; cat "$D/.ghydra/serve.json" 2>/dev/null
+         echo "== exe 版本 =="; "$D/ghydra$EXT" version 2>&1 | head -1
          fail "daemon 场景 apply 失败"; }
   NEW_PID=$(grep -o '"pid":[0-9]*' "$D/.ghydra/serve.json" | head -1 | cut -d: -f2)
   [ "$NEW_PID" != "$SERVE_PID" ] || fail "daemon 应换 pid（旧 $SERVE_PID → 新 $NEW_PID）"
