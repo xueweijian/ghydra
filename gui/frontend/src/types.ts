@@ -45,6 +45,24 @@ export interface ApiStatus {
   takeover: TakeoverState;
 }
 
+// W3c：git/ssh 集成状态（GET /api/git|ssh/status）。
+export interface GitKeyInfo {
+  name: string;
+  value: string;
+  managed: boolean;
+}
+
+export interface GitStatusInfo {
+  keys: GitKeyInfo[];
+  snapshot: boolean; // 存在可还原快照
+}
+
+export interface SSHStatusInfo {
+  enabled: boolean;
+  alias: boolean;
+  config_path: string;
+}
+
 // W3a：系统代理接管态（Boost 页大开关数据源；SSE status 帧同形状）。
 export interface TakeoverState {
   on: boolean;

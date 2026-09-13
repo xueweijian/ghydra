@@ -91,6 +91,9 @@ export function gitOp(action: "enable" | "disable" | "status", body?: object) {
   });
 }
 
+export const gitStatus = () => apiFetch<import("../types").GitStatusInfo>("/api/git/status");
+export const sshStatus = () => apiFetch<import("../types").SSHStatusInfo>("/api/ssh/status");
+
 export function sshOp(action: "enable" | "disable" | "status", body?: object) {
   return apiFetch<Record<string, unknown>>(`/api/ssh/${action}`, {
     method: action === "status" ? "GET" : "POST",

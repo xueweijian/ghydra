@@ -62,7 +62,7 @@ export default function App() {
           </div>
         </Show>
         {page() === "status" && <Status events={events.state} />}
-        {page() === "boost" && <Boost />}
+        {page() === "boost" && <Boost events={events.state} />}
         {page() === "rules" && <Rules events={events.state} />}
         {page() === "downloads" && <Downloads events={events.state} />}
         {page() === "mitm" && <Mitm />}
