@@ -1,7 +1,7 @@
 # GHydra 工程约定与开发流程（Dev Workflow）
 > **用途**：本项目的开发方式铁律——环境分工、CI/CD、测试策略、阶段门禁、壳选型决策规则。
 > **维护规则**：流程变更先改此文档再改代码；每里程碑结束随 TechReference §6 一并回填实际执行情况。
-> 关联文档：`GHydra-PRD.md`、`GHydra-TechReference.md`
+> 关联文档：`GHydra-PRD.md`、`GHydra-TechReference.md`、**`GHydra-Pitfalls.md`（工程坑合集——动手前先查，踩坑随手追加）**
 
 | 项 | 内容 |
 |---|---|
