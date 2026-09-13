@@ -135,6 +135,7 @@ type DoctorFrame struct {
 	ProxyTotal int       `json:"proxy_total"` // 五场景
 	DirectOK   int       `json:"direct_ok"`
 	CDNOK      *int      `json:"cdn_ok,omitempty"` // nil = 无 B 列
+	Error      string    `json:"error,omitempty"`
 	FinishedAt time.Time `json:"finished_at"`
 }
 

@@ -220,12 +220,8 @@ func printDownloadStats(dbPath string) {
 //
 // 路由：channel.Router（D1/D3）——命中加速域名时，Closed→A 转发，
 // Open→B CDN 改写；结果回灌 Router 流量窗口。
-func servePlainHTTP(router *channel.Router, m *rules.Matcher, pick func(string) (string, bool), cdnPrefix string) http.Handler {
+func servePlainHTTP(router *channel.Router, m *rules.Matcher, pick func(string) (string, bool), cdnFn func() string) http.Handler {
 	a := get.NewAFetcher(pick)
-	var b get.Fetcher
-	if cdnPrefix != "" {
-		b = newBFetcherProd(cdnPrefix)
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 绝对形态（http://host/path）才是代理请求；其余走本地端点
 		if r.URL.Host == "" {
@@ -240,8 +236,13 @@ func servePlainHTTP(router *channel.Router, m *rules.Matcher, pick func(string) 
 		}
 		route := router.Route(channel.Flow{Kind: channel.KindPlainHTTP, Host: host})
 		ch := route.Channel
-		if ch == channel.CDN && b == nil {
-			ch = channel.Direct // B 未配置：回落 A
+		var b get.Fetcher // B 运行时构造（cdnFn 支持热更；空 = 回落 A）
+		if ch == channel.CDN {
+			if p := cdnFn(); p != "" {
+				b = newBFetcherProd(p)
+			} else {
+				ch = channel.Direct
+			}
 		}
 
 		target := *r.URL

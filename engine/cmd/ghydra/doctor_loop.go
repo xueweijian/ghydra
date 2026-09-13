@@ -21,7 +21,7 @@ import (
 // 监听地址传入。notify 可为 nil；非 nil 时每轮把蒸馏判定
 // （channel.Verdict）回调给调用方（serve 的通道决策器）。
 // notifyB 回调 B 列健康（nil = 无 B 通道）。
-func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL, cdnPrefix string,
+func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL string, cdnFn func() string,
 	notify func(channel.Verdict), notifyB func(bool), dialOverride map[string]string) func() {
 	if interval <= 0 || dbPath == "" || proxyURL == "" {
 		return func() {}
@@ -33,7 +33,7 @@ func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL, cdnPrefix s
 		cfg.Timeout = 12 * time.Second
 		cfg.Repo = repo
 		cfg.ProxyURL = proxyURL
-		cfg.CDNPrefix = cdnPrefix
+		cfg.CDNPrefix = cdnFn()
 		cfg.DialOverride = dialOverride
 		r := probe.New(cfg)
 		// 先确认本地代理监听并能返回 /status。on 启动时 doctor
@@ -53,7 +53,7 @@ func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL, cdnPrefix s
 		cancelProxy()
 		reports := []probe.Report{direct, proxy}
 		// B 通道列：五场景经 CDN 前缀（独立预算；失败也不阻塞判定）
-		if cdnPrefix != "" {
+		if p := cfg.CDNPrefix; p != "" {
 			ctxCDN, cancelCDN := context.WithTimeout(context.Background(), cfg.Timeout+3*time.Second)
 			cdn := r.Run(ctxCDN, probe.ModeCDN)
 			cancelCDN()

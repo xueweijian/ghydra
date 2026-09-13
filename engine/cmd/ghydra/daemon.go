@@ -190,22 +190,6 @@ func onCmd(args []string) {
 		log.Printf("端口 %d 被占，迁移到 %d", *port, chosen)
 	}
 
-	// 快照原值（Current 失败继续——Linux 无桌面场景 PAC 接管降级提示）
-	if cur, err := sysproxy.Current(); err == nil {
-		if st, err := store.Open(*dbPath); err == nil {
-			curJSON, merr := json.Marshal(cur)
-			if merr == nil {
-				if err := st.SaveSnapshotJSON(string(curJSON)); err != nil {
-					st.Close()
-					log.Fatalf("快照保存失败: %v", err)
-				}
-			}
-			st.Close()
-		}
-	} else {
-		log.Printf("读取当前系统代理失败（%v）——快照跳过，off 时将直接清除", err)
-	}
-
 	pid, err := spawnServe(chosen, *dbPath)
 	if err != nil {
 		log.Fatalf("拉起 serve 失败: %v", err)
@@ -227,21 +211,11 @@ func onCmd(args []string) {
 		log.Printf("serve.json 写入失败: %v", err)
 	}
 
-	// 接管
-	var setting sysproxy.Setting
-	if *mode == "proxy" {
-		setting = sysproxy.Setting{ProxyServer: fmt.Sprintf("127.0.0.1:%d", chosen), ProxyEnabled: true}
-	} else {
-		setting = sysproxy.Setting{PACURL: fmt.Sprintf("http://127.0.0.1:%d/pac", chosen)}
-	}
-	if err := sysproxy.Apply(setting); err != nil {
-		// 回滚：停 serve + 删快照，不留半接管状态（D4）
+	// 接管（核：快照 + 应用 + 失败回滚本次快照——与 API /api/on 同一份实现）
+	if err := applyTakeover(*dbPath, *mode, chosen); err != nil {
+		// 回滚：停 serve + 删 serve.json，不留半接管状态（D4）
 		stopServe(&daemonState{PID: pid})
 		removeDaemonState()
-		if st, err := store.Open(*dbPath); err == nil {
-			st.DeleteSnapshot()
-			st.Close()
-		}
 		log.Fatalf("系统代理设置失败，已回滚: %v", err)
 	}
 
@@ -256,34 +230,15 @@ func offCmd(args []string) {
 
 	ensureReconcile(*dbPath)
 
-	// 先恢复代理（浏览器立即回到直连，不等 serve 退出）
-	if *dbPath != "" {
-		if st, err := store.Open(*dbPath); err == nil {
-			if psJSON, ok, _ := st.LoadSnapshotJSON(); ok {
-				var orig sysproxy.Setting
-				if json.Unmarshal([]byte(psJSON), &orig) == nil {
-					if err := sysproxy.Apply(orig); err != nil {
-						// 恢复失败不能删快照；下次命令/用户手动修复环境后
-						// 仍需有机会重试（与 ensureReconcile 一致）。
-						log.Printf("恢复原值失败: %v（原值 %s）；保留快照重试", err, orig)
-					} else {
-						st.DeleteSnapshot()
-					}
-				} else {
-					// 快照损坏：无法恢复，清除代理 + 删快照（与 reconcile 一致）
-					sysproxy.Clear()
-					st.DeleteSnapshot()
-				}
-			}
-			st.Close()
-		}
+	// 核：恢复快照 + 还原 git/ssh 托管（与 API /api/off 同一份实现）。
+	// 恢复失败保留快照重试（下次命令/用户修复环境后仍有机会）。
+	if err := releaseTakeover(*dbPath); err != nil {
+		log.Printf("恢复未完成: %v（保留快照，可重试 ghydra off）", err)
 	}
 
 	d := loadDaemonState()
 	stopServe(d)
 	removeDaemonState()
-	// W4：git/ssh 托管快照一并还原（D6：off 语义 = 完全退出不留痕）
-	restoreManagedOnOff(*dbPath)
 	fmt.Println("GHydra 已退出，系统代理已恢复。")
 }
 

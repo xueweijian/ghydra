@@ -38,10 +38,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/xueweijian/ghydra/engine/api"
 	"github.com/xueweijian/ghydra/engine/bootstrap"
 	"path/filepath"
 
 	"github.com/xueweijian/ghydra/engine/channel"
+	"github.com/xueweijian/ghydra/engine/gitcfg"
 	"github.com/xueweijian/ghydra/engine/probe"
 	"github.com/xueweijian/ghydra/engine/proxy"
 	"github.com/xueweijian/ghydra/engine/rules"
@@ -74,6 +76,8 @@ func main() {
 		sshCmd(os.Args[2:])
 	case "serve":
 		serveCmd(os.Args[2:])
+	case "token":
+		tokenCmd(os.Args[2:])
 	case "on":
 		onCmd(os.Args[2:])
 	case "off":
@@ -193,6 +197,9 @@ func serveCmd(args []string) {
 	cdn := fs.String("cdn", "", "B 通道 CDN 前缀（如 https://gh-proxy.com/；空 = 禁用切道，W3 默认化）")
 	managed := fs.Bool("managed", false, "由 ghydra on 拉起（退出时恢复系统代理）")
 	dialOverride := fs.String("dial-override", "", "host=ip[,host=ip…] 强制上游拨号 IP（演练/镜像映射）")
+	apiToken := fs.String("api-token", "", "本机 API token（显式注入；默认读/建 ~/.ghydra/api-token，M3-W1）")
+	apiTokenFile := fs.String("api-token-file", "", "token 文件路径（覆盖默认位置）")
+	guiDist := fs.String("gui-dist", "", "前端面板目录（空 = exe 旁 dist/ 自动探测；不存在则不启面板）")
 	_ = fs.Parse(reorderFlags(args, "scheduler", "managed"))
 
 	// on 已在拉起前完成残留对账并写入快照；managed 子进程启动
@@ -262,6 +269,13 @@ func serveCmd(args []string) {
 
 	var conns atomic.Int64
 
+	// M3-W1：控制 API 装配。apiSrv 先声明后构造（OnEvent/DoctorRun
+	// 等闭包自引用）；token 空 = /api 全 401（装配失败的保守面）。
+	var apiSrv *api.Server
+	shutdownCh := make(chan struct{})
+	var shutdownOnce sync.Once
+	cdnFn := func() string { return *cdn }
+
 	srv := &proxy.Server{
 		Selector:    sel,
 		DialTimeout: *timeout,
@@ -275,6 +289,9 @@ func serveCmd(args []string) {
 			}
 			log.Printf("[conn#%d] %s -> %s accel=%t dial=%.1fms rx=%dB tx=%dB %s",
 				n, e.Host, e.Target, e.Accel, e.DialMS, e.Rx, e.Tx, status)
+			if apiSrv != nil {
+				apiSrv.PushConn(mapConn(e)) // SSE conn 帧（250ms 合批）
+			}
 			if reportEvent != nil {
 				reportEvent(e) // 调度器信号（非阻塞；池外目标自动忽略）
 			}
@@ -288,6 +305,185 @@ func serveCmd(args []string) {
 
 	// 同端口托管 PAC / status（R5：主端口 http 分流，AutoConfigURL 直指）
 	actualAddr := *listen
+
+	// ---- M3-W1 控制 API：token 解析 + Deps 装配 ----
+	tok := *apiToken
+	if tok == "" {
+		tp := *apiTokenFile
+		if tp == "" {
+			tp = api.DefaultTokenPath()
+		}
+		if t, err := api.LoadOrCreateToken(tp); err == nil {
+			tok = t
+		} else {
+			log.Printf("[api] token 不可用: %v（/api 将全部 401）", err)
+		}
+	}
+	doctorProxyURL := "" // 监听确定后填入（Deps 闭包读变量）
+	doctorBusy := false
+	var doctorMu sync.Mutex
+	tasks := newTaskRegistry(getDownloaderFactory(pick, cdnFn),
+		func(t api.GetTask) {
+			if apiSrv != nil {
+				apiSrv.PushGet(t)
+			}
+		})
+
+	buildConfig := func() api.ApiConfig {
+		return api.ApiConfig{
+			Listen: actualAddr, Scheduler: *schedOn, CDN: cdnFn(),
+			DoctorEveryS: int64(*doctorInterval / time.Second),
+			DoctorRepo:   *doctorRepo, Managed: *managed,
+			GUIDist: guiDirOrDefault(*guiDist),
+		}
+	}
+	apiSrv = api.New(api.Deps{
+		Status: func() api.ApiStatus {
+			st := api.ApiStatus{
+				APIVersion: api.APIVersion,
+				Listen:     actualAddr,
+				Scheduler:  *schedOn,
+				Conns:      conns.Load(),
+				UptimeS:    time.Since(startTime).Seconds(),
+				Channel:    mapChannel(chRouter.Snapshot()),
+				CDN:        cdnFn(),
+			}
+			if sc != nil {
+				pools := map[string]api.PoolSnapshot{}
+				for _, h := range sc.Hosts() {
+					pools[h] = api.PoolSnapshot{Sticky: sc.StickyIP(h), IPs: mapIPs(sc.Snapshot(h))}
+				}
+				st.Pools = pools
+			}
+			return st
+		},
+		ConfigGet: buildConfig,
+		ConfigSet: func(p api.ConfigPatch) (api.ApiConfig, error) {
+			if p.CDN == nil {
+				return api.ApiConfig{}, api.UserError("无可热更字段（仅 cdn）")
+			}
+			*cdn = *p.CDN // 热更：plain HTTP/doctor/get/status 全走 cdnFn
+			log.Printf("[api] cdn 热更 → %q", *p.CDN)
+			return buildConfig(), nil
+		},
+		SystemOn: func(mode string) (api.OnResp, error) {
+			if err := applyTakeover(*dbPath, mode, portOf(actualAddr)); err != nil {
+				return api.OnResp{}, err
+			}
+			log.Printf("[api] 系统代理已接管（%s）", mode)
+			return api.OnResp{OK: true, Mode: mode}, nil
+		},
+		SystemOff: func(shutdown bool) (api.OffResp, error) {
+			if err := releaseTakeover(*dbPath); err != nil {
+				return api.OffResp{}, err
+			}
+			log.Printf("[api] 系统代理已恢复")
+			if shutdown {
+				shutdownOnce.Do(func() { close(shutdownCh) })
+			}
+			return api.OffResp{OK: true, Shutdown: shutdown}, nil
+		},
+		DoctorRun: func(repo string) (string, error) {
+			doctorMu.Lock()
+			if doctorBusy {
+				doctorMu.Unlock()
+				return "", api.ErrBusy
+			}
+			doctorBusy = true
+			doctorMu.Unlock()
+			runID := doctorRunID()
+			go func() {
+				defer func() {
+					doctorMu.Lock()
+					doctorBusy = false
+					doctorMu.Unlock()
+				}()
+				r := repo
+				if r == "" {
+					r = *doctorRepo
+				}
+				frame, err := doctorOnce(r, doctorProxyURL, cdnFn,
+					chRouter.NotifyDoctor, chRouter.NotifyB, ovMap)
+				frame.RunID = runID
+				if err != nil {
+					frame.Error = err.Error()
+					frame.Verdict = "error"
+				}
+				apiSrv.PushDoctor(frame)
+			}()
+			return runID, nil
+		},
+		DoctorSummary: func(hours int) (api.DoctorSummaryResp, error) {
+			st, err := store.Open(*dbPath)
+			if err != nil {
+				return api.DoctorSummaryResp{}, err
+			}
+			defer st.Close()
+			rows, err := st.DoctorSummary(time.Now().Add(-time.Duration(hours) * time.Hour))
+			if err != nil {
+				return api.DoctorSummaryResp{}, err
+			}
+			out := api.DoctorSummaryResp{Runs: []api.DoctorSummaryRow{}}
+			for _, r := range rows {
+				out.Runs = append(out.Runs, api.DoctorSummaryRow{
+					Mode: r.Mode, Scenario: r.Scenario, Checks: r.Checks,
+					Passed: r.Passed, Reachable: r.Reachable,
+					AvgDurationMS: r.AvgDurationMS, AvgTTFBMS: r.AvgTTFBMS,
+					FirstAt: r.FirstAt, LastAt: r.LastAt,
+				})
+			}
+			return out, nil
+		},
+		GitOp: func(action string, body []byte) (any, error) {
+			switch action {
+			case "enable":
+				var req struct {
+					CDN        string `json:"cdn"`
+					PushViaB   bool   `json:"push_via_b"`
+					SSHRewrite bool   `json:"ssh_rewrite"`
+					Force      bool   `json:"force"`
+				}
+				decodeJSONBody(body, &req)
+				snap, err := gitEnableCore(*dbPath,
+					gitcfg.Options{CDN: req.CDN, PushViaB: req.PushViaB, SSHRewrite: req.SSHRewrite}, req.Force)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"ok": true, "written_count": len(snap.Written)}, nil
+			case "disable":
+				n, err := gitDisableCore(*dbPath)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"ok": true, "restored": n}, nil
+			case "status":
+				return gitStatusCore(*dbPath, gitcfg.Options{CDN: cdnFn()})
+			default:
+				return nil, api.UserError("未知 action: " + action)
+			}
+		},
+		SSHOp: func(action string, body []byte) (any, error) {
+			cfgPath := defaultSSHConfigPath()
+			switch action {
+			case "enable":
+				var req struct {
+					Alias    bool `json:"alias"`
+					AssumeOK bool `json:"assume_ok"`
+				}
+				decodeJSONBody(body, &req)
+				return sshEnableCore(*dbPath, cfgPath, req.Alias, req.AssumeOK)
+			case "disable":
+				return sshDisableCore(*dbPath, cfgPath)
+			case "status":
+				return sshStatusCore(cfgPath)
+			default:
+				return nil, api.UserError("未知 action: " + action)
+			}
+		},
+		GetStart:    tasks.start,
+		GetProgress: tasks.progress,
+	}, tok)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/pac", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ns-proxy-autoconfig")
@@ -320,8 +516,18 @@ func serveCmd(args []string) {
 		}
 		writeJSON(w, out)
 	})
-	// 明文 http 代理路径：URL 可见 → 按通道决策 A 转发 / B CDN 改写
-	mux.Handle("/", servePlainHTTP(chRouter, m, pick, *cdn))
+	// 明文 http 代理路径：URL 可见 → 按通道决策 A 转发 / B CDN 改写；
+	// 非代理请求（Host 形态）且面板目录在场 → 前端面板（M3-W1 双模式）
+	plain := servePlainHTTP(chRouter, m, pick, cdnFn)
+	gui := staticSPA(guiDirOrDefault(*guiDist))
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Host == "" && gui != nil {
+			gui.ServeHTTP(w, r)
+			return
+		}
+		plain.ServeHTTP(w, r)
+	}))
+	mux.Handle("/api/", apiSrv.Handler())
 	srv.HTTPHandler = mux
 
 	// 端口冲突迁移（W3：9801 被占 → +1..+8）
@@ -341,12 +547,17 @@ func serveCmd(args []string) {
 	if err != nil {
 		log.Fatalf("监听失败（含迁移尝试）: %v", err)
 	}
+	doctorProxyURL = "http://" + ln.Addr().String()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-sig
-		log.Printf("收到退出信号，正在关闭…")
+		select {
+		case <-sig:
+			log.Printf("收到退出信号，正在关闭…")
+		case <-shutdownCh:
+			log.Printf("API 请求退出，正在关闭…")
+		}
 		if *managed {
 			restoreSnapshot(*dbPath) // on 拉起的 serve：退出时恢复系统代理
 		}
@@ -356,9 +567,13 @@ func serveCmd(args []string) {
 	var stopDoctor func()
 	if *doctorInterval > 0 && *dbPath != "" {
 		stopDoctor = startDoctorLoop(*doctorInterval, *dbPath, *doctorRepo,
-			"http://"+ln.Addr().String(), *cdn, chRouter.NotifyDoctor, chRouter.NotifyB, ovMap)
+			doctorProxyURL, cdnFn, chRouter.NotifyDoctor, chRouter.NotifyB, ovMap)
 		defer stopDoctor()
 	}
+
+	apiCtx, apiCancel := context.WithCancel(context.Background())
+	defer apiCancel()
+	apiSrv.Start(apiCtx)
 
 	log.Printf("ghydra serve 已启动: %s | 加速域名 %d 条 | scheduler=%t | backlog %d",
 		ln.Addr().String(), len(m.Domains()), *schedOn, *backlog)
@@ -371,6 +586,30 @@ func serveCmd(args []string) {
 		restoreSnapshot(*dbPath) // 正常退出路径也恢复
 	}
 	log.Printf("已退出，共服务 %d 条连接", conns.Load())
+}
+
+// tokenCmd 打印本机 API token（浏览器兜底模式/GUI 首次接入的取值出口）。
+func tokenCmd(args []string) {
+	fs := flag.NewFlagSet("token", flag.ExitOnError)
+	asJSON := fs.Bool("json", false, "JSON 输出")
+	file := fs.String("file", "", "token 文件路径（默认 ~/.ghydra/api-token）")
+	_ = fs.Parse(reorderFlags(args, "json"))
+	p := *file
+	if p == "" {
+		p = api.DefaultTokenPath()
+	}
+	if p == "" {
+		log.Fatalf("HOME 不可用，无法定位 token 文件")
+	}
+	tok, err := api.LoadOrCreateToken(p)
+	if err != nil {
+		log.Fatalf("token: %v", err)
+	}
+	if *asJSON {
+		fmt.Printf("{\"token\": %q, \"path\": %q}\n", tok, p)
+		return
+	}
+	fmt.Printf("%s\n（文件 %s；请求带 X-GHydra-Token 头，SSE 用 ?token=）\n", tok, p)
 }
 
 var startTime = time.Now()

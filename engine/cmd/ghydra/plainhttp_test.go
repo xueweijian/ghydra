@@ -30,7 +30,7 @@ func TestServePlainHTTPRouteAB(t *testing.T) {
 	m := rules.New([]string{"github.com"})
 	router := channel.New(channel.DefaultConfig(), nil)
 	pick := func(string) (string, bool) { return strings.TrimPrefix(origin.URL, "http://"), true }
-	h := servePlainHTTP(router, m, pick, cdn.URL+"/p/")
+	h := servePlainHTTP(router, m, pick, func() string { return cdn.URL + "/p/" })
 
 	get := func(host string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", "http://"+host+"/file.bin", nil)
@@ -61,7 +61,7 @@ func TestServePlainHTTPRouteAB(t *testing.T) {
 	}))
 	defer other.Close()
 	pick2 := func(string) (string, bool) { return strings.TrimPrefix(other.URL, "http://"), true }
-	h2 := servePlainHTTP(router, m, pick2, cdn.URL+"/p/")
+	h2 := servePlainHTTP(router, m, pick2, func() string { return cdn.URL + "/p/" })
 	req := httptest.NewRequest("GET", other.URL+"/x", nil) // 非 github.com
 	w2 := httptest.NewRecorder()
 	h2.ServeHTTP(w2, req)

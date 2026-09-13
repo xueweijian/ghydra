@@ -6,7 +6,6 @@ package main
 // status: 当前键、冲突、改写演示
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -88,19 +87,18 @@ func gitEnable(args []string, dbPath string) {
 		fmt.Fprintln(os.Stderr, "必须提供 --cdn（或 GHYDRA_CDN）")
 		os.Exit(2)
 	}
-	execr := gitcfg.CLIExec{}
-	desired, err := gitcfg.Desired(f.opts())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "参数错误:", err)
-		os.Exit(2)
-	}
 	if f.dryRun {
 		fmt.Println("[dry-run] 将写入的键:")
+		execr := gitcfg.CLIExec{}
+		desired, err := gitcfg.Desired(f.opts())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "参数错误:", err)
+			os.Exit(2)
+		}
 		for _, k := range desired {
 			fmt.Printf("  %s = %s\n", k.Name, k.Value)
 		}
-		existing, err := gitcfg.ReadURLKeys(execr)
-		if err == nil {
+		if existing, err := gitcfg.ReadURLKeys(execr); err == nil {
 			_, _, conflicts := gitcfg.Plan(existing, desired)
 			for _, c := range conflicts {
 				fmt.Printf("  冲突: %s = %s\n", c.Desired.Name, c.Existing.Value)
@@ -108,21 +106,10 @@ func gitEnable(args []string, dbPath string) {
 		}
 		return
 	}
-	snap, err := gitcfg.Enable(execr, f.opts(), f.force)
+	snap, err := gitEnableCore(dbPath, f.opts(), f.force) // 核（与 API 共用）
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
-	}
-	// 写入成功才落快照（半途失败 = git 命令错误，无快照无副作用混乱）
-	if dbPath != "" {
-		if st, err := store.Open(dbPath); err == nil {
-			if b, merr := json.Marshal(snap); merr == nil {
-				if serr := st.SaveManagedSnapshot(storeGitKind, string(b)); serr != nil {
-					fmt.Fprintln(os.Stderr, "警告: 快照保存失败（disable 需手工清理）:", serr)
-				}
-			}
-			st.Close()
-		}
 	}
 	fmt.Printf("已写入 %d 个键（push=%s ssh=%s）:\n", len(snap.Written), pushPathName(f.pushViaB), sshRewriteName(f.sshRewrite))
 	for _, k := range snap.Written {
@@ -150,34 +137,16 @@ func sshRewriteName(v bool) string {
 }
 
 func gitDisable(dbPath string) {
-	if dbPath == "" {
-		fmt.Fprintln(os.Stderr, "无本地库，无法定位快照")
-		os.Exit(1)
-	}
-	st, err := store.Open(dbPath)
+	n, err := gitDisableCore(dbPath) // 核（与 API 共用）
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "打开本地库失败:", err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	defer st.Close()
-	payload, ok, err := st.LoadManagedSnapshot(storeGitKind)
-	if err != nil || !ok {
+	if n == 0 {
 		fmt.Println("没有 ghydra git 快照（可能未 enable 或已恢复）")
 		return
 	}
-	var snap gitcfg.Snapshot
-	if json.Unmarshal([]byte(payload), &snap) != nil {
-		fmt.Fprintln(os.Stderr, "快照损坏，请手工检查 git config --global url.* 键")
-		os.Exit(1)
-	}
-	if err := gitcfg.Disable(gitcfg.CLIExec{}, snap); err != nil {
-		fmt.Fprintln(os.Stderr, "恢复失败（快照保留）:", err)
-		os.Exit(1)
-	}
-	if err := st.DeleteManagedSnapshot(storeGitKind); err != nil {
-		fmt.Fprintln(os.Stderr, "警告: 快照删除失败:", err)
-	}
-	fmt.Printf("已还原 %d 个键\n", len(snap.Written))
+	fmt.Printf("已还原 %d 个键\n", n)
 }
 
 func gitStatus(args []string, dbPath string) {

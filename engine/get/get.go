@@ -72,6 +72,12 @@ type Downloader struct {
 	cfg Config
 	a   Fetcher
 	b   Fetcher
+
+	// OnProgress 进度回调（可选，M3-W1）。节流：累计 ≥256KB 或
+	// ≥100ms 触发一次；got 为累计字节，total 为服务端声明（-1 未知，
+	// 表头解析后首次回调起有值），ch 为当前通道（"A"/"B"）。
+	// 表头阶段与 Get 返回前各保证一次回调（前端首帧/终态不依赖节流窗口）。
+	OnProgress func(got, total int64, ch string)
 }
 
 // New 构造。b 可为 nil（无 B 通道，A-only 模式）。
@@ -114,7 +120,12 @@ func (d *Downloader) Get(ctx context.Context, rawURL, dst string) (Result, error
 		}
 		// 一致性期望（首段之后的段必须对上首段的声明，防 CDN 缓存错配）
 		seg, total, etag, slow, err := d.stream(ctx, fetch, rawURL, from, f, offset,
-			first && cur == "A" && d.b != nil, res.TotalBytes, res.ETag)
+			first && cur == "A" && d.b != nil, res.TotalBytes, res.ETag, cur,
+			func(got, tot int64) {
+				if d.OnProgress != nil {
+					d.OnProgress(got, tot, cur)
+				}
+			})
 		first = false
 		seg.Channel = name
 		seg.StartOff = offset
@@ -144,6 +155,7 @@ func (d *Downloader) Get(ctx context.Context, rawURL, dst string) (Result, error
 			}
 			seg.WhyOut = "错误: " + err.Error()
 			res.DurMS = ms(time.Since(start))
+			d.progress(res.GotBytes, res.TotalBytes, cur)
 			return res, fmt.Errorf("下载失败（已写 %d 字节）: %w", offset, err)
 		}
 		if seg.WhyOut != "" { // stream 内部已写原因
@@ -158,16 +170,26 @@ func (d *Downloader) Get(ctx context.Context, rawURL, dst string) (Result, error
 		res.FinalCh = cur
 		res.DurMS = ms(time.Since(start))
 		res.RateBPS = bps(offset, res.DurMS)
+		d.progress(res.GotBytes, res.TotalBytes, cur)
 		return res, nil
+	}
+}
+
+// progress 终态/切道边界的一次性回调（stream 内部为节流回调）。
+func (d *Downloader) progress(got, total int64, ch string) {
+	if d.OnProgress != nil {
+		d.OnProgress(got, total, ch)
 	}
 }
 
 // stream 从 fetch 拉流写入 f（offset 起写）。返回（段指标, 总量, etag,
 // 是否判慢, 错误）。probe=true 时执行 TTFB/前 N 字节启发（仅 A 首段）。
 // wantTotal/wantETag 为跨通道一致性期望（首段后传入；头部即校验，
-// 不等 body 落盘）。零值表示未知、不校验。
+// 不等 body 落盘）。零值表示未知、不校验。ch 为当前通道名（进度回调），
+// onProg 为通道感知的进度回调（nil 安全；表头后立即触发一次）。
 func (d *Downloader) stream(ctx context.Context, fetch Fetcher, rawURL string, from int64,
-	f *os.File, offset int64, probe bool, wantTotal int64, wantETag string) (seg Segment, total int64, etag string, slow bool, err error) {
+	f *os.File, offset int64, probe bool, wantTotal int64, wantETag string, ch string,
+	onProg func(got, total int64)) (seg Segment, total int64, etag string, slow bool, err error) {
 
 	t0 := time.Now()
 	var resp *http.Response
@@ -195,6 +217,15 @@ func (d *Downloader) stream(ctx context.Context, fetch Fetcher, rawURL string, f
 	}
 	etag = resp.Header.Get("ETag")
 
+	// 进度：表头解析完即报一次（total 已知/未知都报，前端尽早显示总量）
+	if onProg != nil {
+		t := total
+		if t <= 0 {
+			t = -1
+		}
+		onProg(offset, t)
+	}
+
 	// 跨通道一致性（防 CDN 缓存错配）：头部阶段拦截，不污染落盘数据
 	if wantTotal > 0 && total > 0 && total != wantTotal {
 		return seg, total, etag, false,
@@ -214,6 +245,8 @@ func (d *Downloader) stream(ctx context.Context, fetch Fetcher, rawURL string, f
 	probeBudget := d.cfg.ProbeBytes
 	probeStart := time.Now()
 	var probeBytes int64
+	var progBytes int64 // 进度节流累计
+	progLast := time.Now()
 
 	for {
 		n, rerr := resp.Body.Read(buf)
@@ -223,6 +256,19 @@ func (d *Downloader) stream(ctx context.Context, fetch Fetcher, rawURL string, f
 			}
 			offset += int64(n)
 			seg.Bytes += int64(n)
+
+			if onProg != nil {
+				progBytes += int64(n)
+				if now := time.Now(); progBytes >= progressChunk || now.Sub(progLast) >= progressInterval {
+					t := total
+					if t <= 0 {
+						t = -1
+					}
+					onProg(offset, t)
+					progBytes = 0
+					progLast = now
+				}
+			}
 
 			if probe && probeBudget > 0 {
 				probeBytes += int64(n)
@@ -263,6 +309,13 @@ func other(ch string) string {
 	}
 	return "A"
 }
+
+// 进度回调节流参数（W1）：字节数窗口优先（大文件平滑），时间窗口兜底
+// （慢速小文件也有心跳）。
+const (
+	progressChunk    = 256 << 10
+	progressInterval = 100 * time.Millisecond
+)
 
 func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 
