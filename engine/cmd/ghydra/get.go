@@ -87,9 +87,11 @@ func getCmd(args []string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	// A 通道：调度器择优（失败降级系统直连——下载器依然可用）
+	// A 通道：调度器择优（失败降级系统直连——下载器依然可用）。
+	// M3-W2：Matcher 走三级地板（磁盘规则可用则用磁盘，否则内嵌）。
 	var pick func(host string) (string, bool)
-	m := rules.New(rules.DefaultDomains)
+	provider := rules.NewProvider(rules.DefaultRulesDir())
+	m := provider.Snapshot().Matcher
 	if sel, stop, err := startScheduler(m, *dbPath); err == nil {
 		defer stop()
 		pick = func(host string) (string, bool) { return sel.Sched.Pick(host) }

@@ -209,10 +209,21 @@ func serveCmd(args []string) {
 		ensureReconcile(*dbPath)
 	}
 
-	m := rules.New(rules.DefaultDomains)
+	// M3-W2：规则三级地板（embedded → disk 验签 → remote 热更）。
+	// sel/PAC 每次现取快照（零锁热生效）；调度器用启动期快照（池集合
+	// 热重建属 W2 phase 3 refresher）。
+	rulesDir := rules.DefaultRulesDir()
+	provider := rules.NewProvider(rulesDir)
+	m := provider.Snapshot().Matcher
+	if snap := provider.Snapshot(); snap.Source != rules.SourceEmbedded {
+		log.Printf("[rules] 磁盘规则已加载 v%d（source=%s，expires=%s）",
+			snap.Version, snap.Source, snap.ExpiresAt.Format(time.RFC3339))
+	} else if rulesDir != "" {
+		log.Printf("[rules] 磁盘规则缺失或验签失败，使用内嵌地板 v%d", snap.Version)
+	}
 
 	var sel proxy.UpstreamSelector = proxy.SelectorFunc(func(host string) (string, bool) {
-		if m.Match(host) {
+		if provider.Snapshot().Matcher.Match(host) {
 			return net.JoinHostPort(host, "443"), true
 		}
 		return "", false
@@ -347,6 +358,7 @@ func serveCmd(args []string) {
 				UptimeS:    time.Since(startTime).Seconds(),
 				Channel:    mapChannel(chRouter.Snapshot()),
 				CDN:        cdnFn(),
+				Rules:      mapRulesStatus(provider),
 			}
 			if sc != nil {
 				pools := map[string]api.PoolSnapshot{}
@@ -482,6 +494,7 @@ func serveCmd(args []string) {
 		},
 		GetStart:    tasks.start,
 		GetProgress: tasks.progress,
+		Rules:       func() api.RulesSnapshot { return mapRulesSnapshot(provider) },
 	}, tok)
 
 	mux := http.NewServeMux()
@@ -490,7 +503,7 @@ func serveCmd(args []string) {
 		// GUI 壳/浏览器面板与 daemon 分源（wails://、file:// 等），
 		// 只读端点放行跨域；W3-W1 的 /api/* 会用 token+Host 校验收紧。
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		fmt.Fprint(w, m.PAC(fmt.Sprintf("127.0.0.1:%d", portOf(actualAddr))))
+		fmt.Fprint(w, provider.Snapshot().Matcher.PAC(fmt.Sprintf("127.0.0.1:%d", portOf(actualAddr))))
 	})
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*") // 只读端点，同上

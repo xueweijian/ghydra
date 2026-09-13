@@ -41,6 +41,10 @@ var (
 	ErrSchema = errors.New("rules: schema violation")
 	// ErrTooLarge 内容超过 MaxFileBytes（A5）。
 	ErrTooLarge = errors.New("rules: file too large")
+	// ErrVersionCap 版本超过 MaxVersion 硬上限（A4 快进 DoS）。sentinel
+	// 供 Apply 区分归因：同样拒收，但 doctor 必须看到 fast-forward 攻击
+	// 类型而非笼统 schema violation。
+	ErrVersionCap = fmt.Errorf("%w: version exceeds hard cap", ErrSchema)
 
 	domainRe = regexp.MustCompile(`^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])*)+$`)
 )
@@ -92,8 +96,11 @@ func (r *RulesFile) Validate() error {
 	if r.SchemaVersion != SchemaVersionV1 {
 		return fmt.Errorf("%w: schema_version %d unsupported", ErrSchema, r.SchemaVersion)
 	}
-	if r.Version < 1 || r.Version > MaxVersion {
-		return fmt.Errorf("%w: version %d out of [1,%d]", ErrSchema, r.Version, MaxVersion)
+	if r.Version < 1 {
+		return fmt.Errorf("%w: version %d < 1", ErrSchema, r.Version)
+	}
+	if r.Version > MaxVersion {
+		return fmt.Errorf("%w: %d > %d", ErrVersionCap, r.Version, MaxVersion)
 	}
 	if r.GeneratedAt.IsZero() || r.ExpiresAt.IsZero() {
 		return fmt.Errorf("%w: missing timestamps", ErrSchema)

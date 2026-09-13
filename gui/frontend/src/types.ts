@@ -40,6 +40,33 @@ export interface ApiStatus {
   pools?: Record<string, PoolSnapshot>;
   channel: ChannelSnapshot;
   cdn?: string;
+  rules: RulesStatus;
+}
+
+// M3-W2 规则热更新（信任地板快照）
+export interface RulesStatus {
+  version: number;
+  source: "embedded" | "disk" | "remote";
+  stale: boolean;
+}
+
+export interface RulesSnapshot {
+  version: number;
+  source: "embedded" | "disk" | "remote";
+  stale: boolean;
+  generated_at: string;
+  expires_at: string;
+  domains: string[];
+  cdn_endpoints: string[];
+  seed_ips: Record<string, string[]>;
+  refresh: RulesRefreshState;
+}
+
+export interface RulesRefreshState {
+  last_result: string;
+  last_at: string;
+  next_at: string;
+  running: boolean;
 }
 
 export interface ApiConfig {

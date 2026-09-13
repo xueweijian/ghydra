@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest";
 import type {
   ApiStatus,
   ApiConfig,
+  RulesSnapshot,
   DoctorSummaryResp,
   DoctorRunResp,
   GetProgressResp,
@@ -29,6 +30,7 @@ import goldenConn from "../../../../engine/api/testdata/golden/sse_conn.json";
 import goldenDoctorFrame from "../../../../engine/api/testdata/golden/sse_doctor.json";
 import goldenGetFrame from "../../../../engine/api/testdata/golden/sse_get.json";
 import goldenHello from "../../../../engine/api/testdata/golden/sse_hello.json";
+import goldenRules from "../../../../engine/api/testdata/golden/rules_snapshot.json";
 
 describe("golden ↔ types.ts 契约锁定", () => {
   it("status.json 满足 ApiStatus", () => {
@@ -36,7 +38,19 @@ describe("golden ↔ types.ts 契约锁定", () => {
     expect(s.api_version).toBe(1);
     expect(s.listen).toContain("127.0.0.1");
     expect(s.channel.state).toBe("Closed");
+    expect(s.rules.version).toBe(10);
+    expect(s.rules.source).toBe("disk");
+    expect(s.rules.stale).toBe(false);
     expect(s.pools!["github.com"].ips[0].state).toBe("Active");
+  });
+
+  it("rules_snapshot.json 满足 RulesSnapshot", () => {
+    const r: RulesSnapshot = goldenRules as RulesSnapshot;
+    expect(r.version).toBe(10);
+    expect(r.source).toBe("disk");
+    expect(r.domains.length).toBeGreaterThan(0);
+    expect(r.seed_ips["github.com"].length).toBeGreaterThan(0);
+    expect(r.refresh.last_result).toBe("ok");
   });
 
   it("config.json 满足 ApiConfig", () => {

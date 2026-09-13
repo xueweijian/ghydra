@@ -23,6 +23,37 @@ type ApiStatus struct {
 	Pools      map[string]PoolSnapshot `json:"pools,omitempty"`
 	Channel    ChannelSnapshot         `json:"channel"`
 	CDN        string                  `json:"cdn,omitempty"`
+	Rules      RulesStatus             `json:"rules"`
+}
+
+// RulesStatus status/SSE status 帧内的规则摘要（M3-W2：热更新可观测）。
+type RulesStatus struct {
+	Version int64  `json:"version"`
+	Source  string `json:"source"` // embedded | disk | remote
+	Stale   bool   `json:"stale"`  // 软过期（A6：可观测不失效）
+}
+
+// RulesSnapshot GET /api/rules 响应：当前信任地板快照全景。
+type RulesSnapshot struct {
+	Version      int64               `json:"version"`
+	Source       string              `json:"source"`
+	Stale        bool                `json:"stale"`
+	GeneratedAt  string              `json:"generated_at"` // RFC3339 UTC
+	ExpiresAt    string              `json:"expires_at"`
+	Domains      []string            `json:"domains"`
+	CDNEndpoints []string            `json:"cdn_endpoints"`
+	SeedIPs      map[string][]string `json:"seed_ips"`
+	Refresh      RulesRefreshState   `json:"refresh"`
+}
+
+// RulesRefreshState 拉取管线状态（W2 phase 3 refresher 填实；schema 先行
+// 锁定，避免 golden 二次迁移）。LastResult: ""=从未拉取 / "ok" /
+// "reject:回滚|快进|验签|schema" / "error:网络…"。
+type RulesRefreshState struct {
+	LastResult string `json:"last_result"`
+	LastAt     string `json:"last_at"` // RFC3339 UTC，空 = 从未
+	NextAt     string `json:"next_at"` // 下次自动拉取时刻，空 = 无计划
+	Running    bool   `json:"running"`
 }
 
 // PoolSnapshot 单域名 IP 池快照。

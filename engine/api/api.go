@@ -41,6 +41,8 @@ type Deps struct {
 	DoctorRun func(repo string) (string, error)          // 异步触发；返回 runID；忙 = ErrBusy
 
 	// 可选（nil → 端点 503 "not assembled"）
+	Rules         func() RulesSnapshot   // GET /api/rules
+	RulesRefresh  func() (string, error) // POST /api/rules/refresh（异步单飞；忙 = ErrBusy）
 	SystemOn      func(mode string) (OnResp, error)
 	SystemOff     func(shutdown bool) (OffResp, error)
 	DoctorSummary func(hours int) (DoctorSummaryResp, error)
@@ -226,6 +228,25 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, s.deps.GetProgress())
 
+	case sub == "rules" && r.Method == http.MethodGet:
+		f := s.deps.Rules
+		if f == nil {
+			writeErr(w, http.StatusServiceUnavailable, "rules not assembled")
+			return
+		}
+		writeJSON(w, http.StatusOK, f())
+	case sub == "rules/refresh" && r.Method == http.MethodPost:
+		f := s.deps.RulesRefresh
+		if f == nil {
+			writeErr(w, http.StatusServiceUnavailable, "rules refresh not assembled")
+			return
+		}
+		id, err := f()
+		if err != nil {
+			writeDep(w, nil, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"started": true, "refresh_id": id})
 	case sub == "mitm/status" && r.Method == http.MethodGet:
 		writeJSON(w, http.StatusOK, MitmStatus{Available: false, Enabled: false,
 			Reason: "mitm engine lands in W2"})

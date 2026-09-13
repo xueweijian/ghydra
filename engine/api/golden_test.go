@@ -58,6 +58,7 @@ func TestGolden(t *testing.T) {
 		{"doctor_summary.json", "GET", "/api/doctor/summary?hours=24"},
 		{"get_progress.json", "GET", "/api/get/progress"},
 		{"mitm_status.json", "GET", "/api/mitm/status"},
+		{"rules_snapshot.json", "GET", "/api/rules"},
 		{"doctor_run.json", "POST", "/api/doctor/run"},
 	} {
 		resp, body := call(t, c.method, ts.URL+c.path, map[string]any{}, authHdr())

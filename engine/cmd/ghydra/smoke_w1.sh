@@ -104,3 +104,46 @@ tok2=$(echo "$out" | sed 's/.*"token": *"\([^"]*\)".*/\1/')
 pass "ghydra token 回读一致"
 
 echo "=== W1 serve 冒烟全绿 ==="
+
+# 13. M3-W2 规则地板：无磁盘规则 → /api/rules = embedded v1
+body=$(curl -s -H "X-GHydra-Token: $TOK" http://127.0.0.1:$PORT/api/rules)
+echo "$body" | grep -q '"source":"embedded"' || fail "无磁盘规则应 embedded: $body"
+echo "$body" | grep -q '"version":1' || fail "内嵌版本 1: $body"
+echo "$body" | grep -q '"refresh":{"last_result":"","last_at":"","next_at":"","running":false}' || fail "refresh 零值形态: $body"
+pass "GET /api/rules → embedded 地板 + refresh 零值"
+
+# 14. status 帧携带规则摘要（单一真相：version/source 与 /api/rules 一致）
+body=$(curl -s -H "X-GHydra-Token: $TOK" http://127.0.0.1:$PORT/api/status)
+echo "$body" | grep -q '"rules":{"version":1,"source":"embedded","stale":false}' || fail "status.rules: $body"
+pass "status.rules 摘要与快照一致"
+
+# 15. rules/refresh 未装配 refresher → 503（phase 3 接入后改 202 断言）
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-GHydra-Token: $TOK" http://127.0.0.1:$PORT/api/rules/refresh)
+[ "$code" = "503" ] || fail "refresh 未装配应 503，得 $code"
+pass "POST /api/rules/refresh → 503（refresher phase 3）"
+
+# 16. 真签名链端到端：repo 真源对（keys.go 冻结公钥签名）落盘 →
+#     重启 serve 加载 disk 源 + PAC 含真源域名
+kill $SRV 2>/dev/null || true
+wait $SRV 2>/dev/null || true
+mkdir -p "$D/.ghydra/rules"
+cp ../rules/current.json "$D/.ghydra/rules/"
+cp ../rules/current.json.minisig "$D/.ghydra/rules/"
+RV=$(python3 -c "import json;print(json.load(open('$D/.ghydra/rules/current.json'))['version'])" 2>/dev/null || echo "?")
+"$D/ghydra" serve --listen 127.0.0.1:$PORT --api-token "$TOK" \
+  --scheduler=false --gui-dist "$D/dist" > "$D/serve2.log" 2>&1 &
+SRV=$!
+i=0
+while ! curl -s -o /dev/null http://127.0.0.1:$PORT/pac; do
+  i=$((i+1)); [ $i -gt 50 ] && { echo "FAIL: serve2 未就绪"; cat "$D/serve2.log"; exit 1; }
+  sleep 0.2
+done
+body=$(curl -s -H "X-GHydra-Token: $TOK" http://127.0.0.1:$PORT/api/rules)
+echo "$body" | grep -q '"source":"disk"' || fail "真源落盘后应 disk: $body"
+echo "$body" | grep -q "\"version\":$RV," || fail "disk 版本 $RV: $body"
+pac=$(curl -s http://127.0.0.1:$PORT/pac)
+echo "$pac" | grep -q 'githubusercontent' || fail "PAC 应含真源域名"
+grep -q "磁盘规则已加载 v$RV" "$D/serve2.log" || fail "serve 日志应有加载行"
+pass "真签名链端到端：落盘 → disk 源 v$RV + PAC 生效 + 日志"
+
+echo "=== W2 冒烟：rules API 四断言完成 ==="

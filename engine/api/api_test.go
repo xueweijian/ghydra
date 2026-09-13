@@ -43,7 +43,25 @@ func fixedStatus() ApiStatus {
 			TripAt: &trip, TripWhy: "window 50% fail", BOK: &bOK,
 			BSuppressed: 2, BSuppWhy: "B dead",
 		},
-		CDN: "https://gh.1ciyuan.cn/",
+		CDN:   "https://gh.1ciyuan.cn/",
+		Rules: RulesStatus{Version: 10, Source: "disk", Stale: false},
+	}
+}
+
+func fixedRulesSnapshot() RulesSnapshot {
+	return RulesSnapshot{
+		Version: 10, Source: "disk", Stale: false,
+		GeneratedAt:  "2026-09-13T00:00:00Z",
+		ExpiresAt:    "2026-10-28T00:00:00Z",
+		Domains:      []string{"github.com", "*.github.com"},
+		CDNEndpoints: []string{"https://gh.1ciyuan.cn", "https://gh-proxy.com"},
+		SeedIPs: map[string][]string{
+			"github.com": {"140.82.112.3", "140.82.121.3", "20.205.243.166"},
+		},
+		Refresh: RulesRefreshState{
+			LastResult: "ok", LastAt: "2026-09-13T06:00:00Z",
+			NextAt: "2026-09-13T12:00:00Z", Running: false,
+		},
 	}
 }
 
@@ -66,7 +84,14 @@ type depState struct {
 
 func testDeps(st *depState) Deps {
 	return Deps{
-		Status:    fixedStatus,
+		Status: fixedStatus,
+		Rules:  func() RulesSnapshot { return fixedRulesSnapshot() },
+		RulesRefresh: func() (string, error) {
+			if st.busy {
+				return "", ErrBusy
+			}
+			return "refresh-20260913-120000", nil
+		},
 		ConfigGet: func() ApiConfig { return fixedConfig() },
 		ConfigSet: func(p ConfigPatch) (ApiConfig, error) {
 			if st.busy {
