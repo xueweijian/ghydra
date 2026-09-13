@@ -35,6 +35,22 @@
 - **每个 PR 必须全绿才可合并**（自己合并自己也走 PR，留下 CI 记录）
 - 基准测试（`go test -bench`）随 CI 跑，性能回归即失败：ClientHello 解析 <50µs、代理层单连接额外延迟 ≤5ms
 
+### 2.1 CI 排障工具箱（W4p1 血的教训：4 轮盲修 → 2 轮清场）
+
+排障顺序（**按此顺序，别跳步**）：
+
+1. **拉全文日志**：`curl -sL -H "Authorization: token $GH_TOKEN" \
+   https://api.github.com/repos/<o>/<r>/actions/jobs/<job_id>/logs`
+   （job_id 从 `/actions/runs/<run_id>/jobs` 取）。匿名访问恒 403，`GH_TOKEN` 是关键。
+2. **看步骤结论**（匿名可读）：`jobs[].steps[].{name,conclusion}`——失败步骤名常常已足够定位。
+3. **失败场景拆独立 step**：跨 step 状态经 `/tmp/state.env`（同 job VM 共享）。
+   这样即使拿不到日志，步骤名也能定位（自建转储通道在权限受限环境会 403，别指望）。
+4. **加现场留痕**：失败分支 `cat` 日志/`ps`/`ss`/状态文件；产品侧守护进程日志必须显式落盘。
+5. **验证性重跑**：纯文档 commit 挂测试 → diff 确认代码未变 → 空 commit 重触发（flaky 判定）。
+
+**时间预算按 CI 最差情况设**（不要按本地体感）：serve 冷启动含 DoH 可达 30s+、
+Windows Defender 扫新 exe 数秒、fsx rename 退避需 ~6.4s、daemon 对账给 60s。详见 Pitfalls §10.8。
+
 ## 3. 测试金字塔
 
 | 层 | 跑在哪 | 内容 |

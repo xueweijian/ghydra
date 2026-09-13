@@ -109,12 +109,24 @@ per-install 随机 CA（平台密钥保护、不同步）+ 三平台一键信任
 | Mitm 页保持 v2.0 占位（桩契约已锁，不删路由） | gui | golden 回归 |
 
 ### W4 · 自更新 + 打包分发 + v1.0
+
+**W4p1（✅ 已完成：ce652dc CI 18/18 全绿；实现笔记 `GHydra-M3-W4-Notes.md`）**
 | 任务 | 交付 | 测试 |
 |---|---|---|
-| 自更新：检查（Releases API 走自身通道）/下载（复用 `ghydra get`）/验签/双目录交换/回滚 + 重启编排 | `engine/selfupdate` + launcher | CI 升级演练：旧版→新版→回滚，daemon 状态对账 |
-| Windows NSIS 安装器（开始菜单/可选自启/卸载清理：注册表+gitcfg+sshcfg+快照残留）、macOS DMG、Linux tar | `packaging/` | CI 出包 + 安装冒烟 |
-| winget manifest + Homebrew tap + scoop（无签名，README 信任教学） | 分发渠道 | manifest 校验 |
-| 诊断包一键导出脱敏（F8） | cmd `ghydra diag` | 脱敏断言 |
+| 自更新：检查（Releases API 走自身通道）/下载（复用 `ghydra get`）/验签/双目录交换/回滚 + 重启编排 | `engine/selfupdate` + `engine/internal/{fsx,minisign}` + CLI `ghydra version/update` | L1 24 + L2 12 + L3 黑盒四场景 × 三平台 CI ✓ |
+| 信任链：sha256 + checksums.txt minisign 双防线（U1-U8）/ 版本单调 / 域白名单 / 尺寸顶 / 无签名拒 | `release.go`/`checksums.go`/`semver.go` | 官方 minisign 工具互操作 fixture ✓ |
+| 交换 + 崩溃恢复 + 启动自检 ×3 自动回滚 + daemon 版本对账 | `swap.go`/`state.go`/`update.go` | 崩溃三态 + 两路径自动回滚 + 真二进制升级演练 ✓ |
+| 测试基建：fake Release server（攻击模式开关）/ fakebin 真子进程 / 冒烟四场景拆独立 CI step | `scripts/releasesrv`、`scripts/smoke_w4.sh` | CI 三平台矩阵 ✓ |
+
+**W4p2（待开工）**
+| 任务 | 交付 | 测试 |
+|---|---|---|
+| `ghydra gui` 子命令转正（build tag 隔离 wails，CLI 构建不沾 gtk） | cmd + gui 模块 | 三平台 CI 出包 |
+| Windows NSIS 安装器（开始菜单/可选自启/卸载清理：注册表+gitcfg+sshcfg+快照残留）、macOS DMG、Linux tar | `packaging/` | CI 出包 + 安装/卸载冒烟（卸载先还原系统代理） |
+| winget manifest + scoop（Homebrew tap 延后，拍板 #9） | 分发渠道 | manifest 校验 |
+| 诊断包一键导出脱敏（F8） | cmd `ghydra diag` | 脱敏断言（命中即拒写） |
+| release.yml：ldflags 版本注入 + 产物名对齐 SelectAsset + checksums 签名 | CI | tag 出包演练 |
+| flags 持久化 + GUI 更新流（拍板 #10） | config + GUI | API 级 E2E |
 | **全新 Windows 机器验收**：双击→一键→clone+push+Release 零配置 | 用户真机 | 退出标准④ |
 | v1.0.0 tag + 公测发布 | Release | 全绿后 |
 

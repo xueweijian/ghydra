@@ -133,9 +133,16 @@
 - **新实现**：本地生成 PAC（域名清单命中→127.0.0.1:port，其余 DIRECT，国内流量零打扰）；端口被占自动迁移并热更新 PAC
 
 ### M9 远程配置与自更新
-- [ ] 读 dev-sidecar `remote_config.json` 及其 Gitee 托管流程
-- [ ] 读 minisign 的文件格式（`filippo.io/ed25519` 实现）
-- **新实现**：规则 JSON ed25519 签名；下载→验签→原子替换→失败回滚；程序自更新流量强制走自身双通道，双目录切换永不自毁
+- [x] 读 dev-sidecar `remote_config.json` 及其 Gitee 托管流程
+- [x] 读 minisign 的文件格式（`filippo.io/ed25519` 实现）
+- **新实现（W2 规则 + W4p1 自更新均已落地）**：
+  - 规则 JSON ed25519 签名；下载→验签→原子替换→失败回滚 → `engine/rules`（W2）
+  - 程序自更新：Releases API → 资产选择（域白名单/尺寸顶/版本单调/无签名拒）→ sha256+minisign 双防线
+    → zip/tar.gz 白名单解包 → 对称交换（tmp+rename，Windows 锁退避）+ 崩溃恢复 + 启动自检 ×3 自动回滚
+    + daemon 版本对账；流量强制走自身双通道 → `engine/selfupdate`（W4p1）
+  - 实现细节与不变量见 `GHydra-M3-W4-Notes.md`；踩坑见 Pitfalls §10
+  - 实证要点：`os.Executable()` 交换后会指向 `.old`（须预捕获）；端口运行态真相归 daemon；
+    minisign `-W` 私钥 158B 布局与 spec 页面不符（见 Pitfalls §6）
 
 ### M10 GUI（Wails + SolidJS）
 - [ ] 反面教材：dev-sidecar 147MB 包
@@ -202,3 +209,5 @@ M3 SNI转发器 → M2 IP调度器 → M1 自举DNS   （三者构成通道A，�
 | M2 IP 调度器 | 2026-09-12 | dev-sidecar SpeedTester；FastGithub.DomainResolve | 自研五态+EWMA；增加 Preflight **TLS SNI** 级验证（不能只测 TCP） | `185.199.x` TCP 通但 TLS ClientHello 后沉默；预筛误判会让五场景全部超时。生产候选统一 `IP:443`。 |
 | M8 系统代理 | 2026-09-12 | clash-verge-rev 思路；networksetup/gsettings/WinINet | Windows PAC Apply 也调用 InternetSetOption(39/37)；on/off 带 SQLite 快照与崩溃对账 | managed serve 启动竞态不能二次对账；恢复失败保留快照。 |
 | M11 doctor | 2026-09-13 | Ghips 301/可达性思路；GitHub 官方 SSH over 443 文档 | 五场景计 SLA，SSH 22/443 只观测；direct/proxy 双列，每小时自动落库 | 关闭魔法有效批次：direct 0/5，proxy 5/5；直连 api 可达不代表 github 主站可达。 |
+| M9 自更新（W4p1） | 2026-09-13 | dev-sidecar `remote_config.json`；minisign 格式；syncthing 包目录思路 | 比计划更硬：**双目录交换 → 对称交换 + 崩溃恢复**（无需双目录）；新增启动自检 ×3 自动回滚 + daemon 版本对账；信任链 sha256+minisign 双防线（U1-U8）；release 钥匙与 rules 钥匙**分离** | ①`os.Executable()` 交换后指向 `.old` → 重启 daemon 拉起旧版（须交换前预捕获）②端口运行态真相归 daemon（自写 serve.json）③`-X` 全路径静默失效（绕 main 包）④Windows `os.UserHomeDir` 读 USERPROFILE。详见 `GHydra-M3-W4-Notes.md` + Pitfalls §10 |
+| M9 签名链（W2） | 2026-09-13 | minisign 0.11 规范（页面过时）+ 官方二进制互操作 | 零依赖手写验签（Ed/ED 双算法）；三级信任地板 embedded→disk→remote；seen_max 独立持久化防重放 | `-W` 私钥 158B 布局（spec 写 142B）；公钥注释 key_id ≠ blob key_id。详见 Pitfalls §6 |

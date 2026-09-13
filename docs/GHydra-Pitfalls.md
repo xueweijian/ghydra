@@ -43,7 +43,13 @@
   铁律：**windows 矩阵里的 run: 一律显式 `shell: bash`**。
 - **build job steps=[] = runner provisioning 失败**，非代码问题；同 commit 三平台只有 linux-amd64 挂即可判定，空 commit 重跑证伪。
 - **flaky 判定流程**：纯 docs/tsx commit 挂测试 → diff 确认代码未变 → 空 commit 重触发。Windows 计时器粒度已 4 次（3 真坑 1 flaky）。
-- **CI 失败日志考古**：失败时 runner 把 /tmp/test.out push 回 `ci-failure-log` 分支（permissions: contents: write），**匿名 git fetch 可读**——绕过 API 日志 admin 权限墙；fetch 完毕 rm 分支。
+- **CI 失败日志考古**（W4 更新）：
+  - **`GH_TOKEN` 环境变量 + `curl -H "Authorization: token $GH_TOKEN" .../actions/jobs/{job_id}/logs` 可下全文日志**；
+    匿名访问一律 403 "Must have admin rights"。**这是本项目 CI 排障的首选手段**（前 4 轮盲修的直接教训）。
+  - 匿名可读的还有**步骤结论**（`/actions/runs/{id}/jobs` → steps[].name + conclusion）——
+    **场景拆独立 step，失败步骤名即定位**。
+  - 自建转储（把日志 push 回 `ci-failure-log` 分支）在权限受限环境会 403（"Resource not accessible by integration"）——
+    别指望，用 GH_TOKEN 直读。
 - **等待 CI 用 ~4 分钟短轮询**，不要 8 分钟长睡（用户拍板）。
 - **macOS dyld 拒绝 Go≤1.23 race 二进制**（LC_UUID，golang/go#68678）：CI go-version ≥1.24。
 - **签名/eol 供应链**：`*.minisig`、`engine/rules/testdata/**`、`rules/**` 必须 `.gitattributes -text`——CRLF 化 = 字节改变 = 验签必挂（global-sig 挂而主签名过的特征可诊断）。
@@ -90,3 +96,70 @@
 - 真私钥签名向量进 repo 是**合法发布形态**（签名=公开数据）；`-unsafe` 签出的 vff 单独放，文件头注释标明。
 - 新增毒化变体 checklist：①变体 json 用 python 从 current.json 改字段 ②sign-rules 签名（schema 拒的走 -unsafe）③`.gitattributes` 覆盖确认 ④smoke 加场景 ⑤归因断言写具体错误类。
 - serve 侧测试注入点：`--rules-url`（A 源覆盖，信任锚不变）+ `--rules-interval`（调试缩短周期）；fakesite `-poison`（a1 内容/a5 无限流）。
+- **release 签名钥匙与 rules 钥匙分离**（W4）：`shared/ghydra-keys/ghydra-release.key`，公钥 fingerprint
+  `F0716070E4E793E7` 冻结在 `engine/selfupdate/release.go`。私钥离线，永不进 repo/CI。
+
+## 10. 自更新（W4p1 新增，每条都是真 bug 或真事故）
+
+### 10.1 CI 失败考古：GH_TOKEN 可读 job 日志（**破局点**）
+
+- 匿名 `GET /repos/{o}/{r}/actions/jobs/{id}/logs` → **403 "Must have admin rights"**；
+  但沙箱环境变量 **`GH_TOKEN` + `Authorization: token $GH_TOKEN` 可下全文日志**。
+  前 4 轮盲修（只有步骤结论）就是缺这一条。
+- **场景拆独立 CI step**：匿名可读**步骤结论**（名字 + success/failure）——失败步骤名即定位，
+  跨 step 状态经 `/tmp/state.env`（同 job VM 共享）。比"一个 step 塞全部断言"强得多。
+- **自建转储通道（git push / gh api PUT）在权限受限环境会全军覆没**：`403 Resource not accessible by integration`。
+  别再在这上面花轮次——用 GH_TOKEN 直接读日志，或拆 step。
+
+### 10.2 `os.Executable()` 在交换后会漂移（**最隐蔽**）
+
+- 症状：apply 报成功、文件也换了，但重启的 daemon 仍是旧版 → 对账 60s 一直读到旧 version。
+- 根因：Linux `os.Executable()` = `readlink(/proc/self/exe)`；交换把运行中的 exe rename 成 `.old` 后，
+  这根链接指向 `.old`，`spawnServe` 于是 exec 了旧二进制。
+- 解法：**交换前捕获** selfPath，全程显式传递（`spawnServeAt(exe, port, db)`）；`os.Executable()` 只留兜底。
+
+### 10.3 端口是运行态真值，必须由 daemon 自己写
+
+- 症状：对账轮询一直空（或读到垂死旧进程的响应）。
+- 根因：serve 端口冲突会静默迁移 `+1..+8`；更新器/脚本按 `serve.json` 里**请求值**轮询 → 打到空气
+  （或打到尚未退出的旧 serve）。
+- 解法：托管 serve 绑定成功后**自己写 serve.json**（`ln.Addr()` 实际端口）；消费方每轮重读跟随。
+
+### 10.4 fd 生命周期：Start() 之前不能关父进程的文件副本
+
+- 症状：macOS `fork/exec ...: bad file descriptor`。
+- 根因：`go f.Close()` 与 `cmd.Start()` 竞态——fork/exec 可能拿到已关闭的 fd。
+- 解法：**`cmd.Start()` 之后**才 `Close()` 父进程那份（子进程已持有自己的 fd 副本）。
+
+### 10.5 Windows `os.UserHomeDir()` 读 USERPROFILE，不读 HOME
+
+- 症状：状态文件消失（断言找不到），实际落到了**真实用户 profile**。
+- 解法：测试与脚本**两个变量都设**（`HOME=` 与 `USERPROFILE=`）；跨平台路径还要 `pwd -W` 原生化
+  （Git-bash 的 `/d/a/...` 原生 Go 进程打不开，ldflags 注入路径同理）。
+
+### 10.6 ldflags 注入：全路径 `-X` 在本工具链静默失效
+
+- `-X github.com/o/r/pkg.Var=v` → 不报错、不生效；`-X main.Var=v` 可靠。
+- 解法：需要注入内部包变量时，经 main 包一个变量中转（`init()` 里调 setter）。
+  排查手法：`strings <binary> | grep <值>` 确认是否真的注进去了。
+
+### 10.7 shell 脚本
+
+- **`set -e` + trap 里 kill 已死 pid**：返回非零会中断 cleanup → 残留进程 + exit 1。
+  trap 首行 `set +e`。
+- **固定 sleep 等 server 就绪不可靠**：改就绪轮询（curl 探活 + 上限），CI 负载下差距可达数十秒。
+- **冒烟断言别用写死端口**：从 `serve.json` 取（见 10.3）。
+- **detached 子进程输出默认 /dev/null**：守护进程日志必须显式落盘，否则 CI 里"人消失了"无从查。
+- **`pkill -f "$D/"` 按目录特征杀残留**：脚本失败路径漏 cleanup 时兜底（detached 进程 pid 可能没记录）。
+
+### 10.8 时间预算（CI 与真机差异）
+
+| 环节 | 本地/快机 | CI 2 核 + 跨境网络 |
+|---|---|---|
+| serve 就绪（含 DoH） | ~1s | 可达 30s+（ubuntu 实证） |
+| 自检子进程（Windows Defender 扫新 exe） | 毫秒 | 数秒（超时设 30s） |
+| fsx rename 退避窗口 | ~800ms 够 | 需 ~6.4s（Defender 持锁） |
+| daemon 版本对账 | 秒级 | 给 60s |
+
+**通用原则**：等待类参数按 CI 最差情况设，不要按本地体感。
+
