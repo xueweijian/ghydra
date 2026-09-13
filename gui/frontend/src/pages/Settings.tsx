@@ -1,5 +1,5 @@
 // Settings.tsx —— 设置页（W1：daemon 地址 / token / cdn）。
-import { createSignal, onMount } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import {
   daemonBase, setDaemonBase, apiToken, setApiToken, setCDN, getConfig,
 } from "../api/client";

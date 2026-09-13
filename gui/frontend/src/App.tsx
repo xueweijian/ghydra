@@ -4,15 +4,17 @@ import { createSignal, Show, onCleanup } from "solid-js";
 import { useEvents } from "./api/sse";
 import Status from "./pages/Status";
 import Boost from "./pages/Boost";
+import Rules from "./pages/Rules";
 import Downloads from "./pages/Downloads";
 import Mitm from "./pages/Mitm";
 import Settings from "./pages/Settings";
 
-type Page = "status" | "boost" | "downloads" | "mitm" | "settings";
+type Page = "status" | "boost" | "rules" | "downloads" | "mitm" | "settings";
 
 const pages: { id: Page; label: string }[] = [
   { id: "status", label: "状态" },
   { id: "boost", label: "加速" },
+  { id: "rules", label: "规则" },
   { id: "downloads", label: "下载" },
   { id: "mitm", label: "增强" },
   { id: "settings", label: "设置" },
@@ -61,6 +63,7 @@ export default function App() {
         </Show>
         {page() === "status" && <Status events={events.state} />}
         {page() === "boost" && <Boost />}
+        {page() === "rules" && <Rules events={events.state} />}
         {page() === "downloads" && <Downloads events={events.state} />}
         {page() === "mitm" && <Mitm />}
         {page() === "settings" && <Settings />}

@@ -4,7 +4,7 @@
 
 import { createSignal } from "solid-js";
 import { daemonBase, apiToken, notifyUnauthorized } from "./client";
-import type { ApiStatus, ConnEvent, DoctorFrame, GetTask, HelloFrame } from "./types";
+import type { ApiStatus, ConnEvent, DoctorFrame, GetTask, HelloFrame } from "../types";
 
 export interface EventsState {
   hello: HelloFrame | null;

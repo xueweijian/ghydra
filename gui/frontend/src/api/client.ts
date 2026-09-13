@@ -63,10 +63,10 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
 // ---- 便捷封装 ----
 
-export const getStatus = () => apiFetch<import("./types").ApiStatus>("/api/status");
-export const getConfig = () => apiFetch<import("./types").ApiConfig>("/api/config");
+export const getStatus = () => apiFetch<import("../types").ApiStatus>("/api/status");
+export const getConfig = () => apiFetch<import("../types").ApiConfig>("/api/config");
 export const setCDN = (cdn: string) =>
-  apiFetch<import("./types").ApiConfig>("/api/config", {
+  apiFetch<import("../types").ApiConfig>("/api/config", {
     method: "POST",
     body: JSON.stringify({ cdn }),
   });
@@ -77,9 +77,12 @@ export const systemOff = (shutdown = false) =>
 export const doctorRun = () =>
   apiFetch<{ run_id: string; started: boolean }>("/api/doctor/run", { method: "POST", body: "{}" });
 export const doctorSummary = (hours = 24) =>
-  apiFetch<import("./types").DoctorSummaryResp>(`/api/doctor/summary?hours=${hours}`);
-export const getProgress = () => apiFetch<import("./types").GetProgressResp>("/api/get/progress");
-export const mitmStatus = () => apiFetch<import("./types").MitmStatus>("/api/mitm/status");
+  apiFetch<import("../types").DoctorSummaryResp>(`/api/doctor/summary?hours=${hours}`);
+export const getProgress = () => apiFetch<import("../types").GetProgressResp>("/api/get/progress");
+export const mitmStatus = () => apiFetch<import("../types").MitmStatus>("/api/mitm/status");
+export const getRules = () => apiFetch<import("../types").RulesSnapshot>("/api/rules");
+export const refreshRules = () =>
+  apiFetch<{ refresh_id: string }>("/api/rules/refresh", { method: "POST" });
 
 export function gitOp(action: "enable" | "disable" | "status", body?: object) {
   return apiFetch<Record<string, unknown>>(`/api/git/${action}`, {
@@ -96,7 +99,7 @@ export function sshOp(action: "enable" | "disable" | "status", body?: object) {
 }
 
 export function startDownload(url: string, dst?: string) {
-  return apiFetch<import("./types").GetStartResp>("/api/get/start", {
+  return apiFetch<import("../types").GetStartResp>("/api/get/start", {
     method: "POST",
     body: JSON.stringify({ url, dst }),
   });
