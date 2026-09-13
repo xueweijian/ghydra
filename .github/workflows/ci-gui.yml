@@ -74,16 +74,18 @@ jobs:
           name: frontend-dist
           path: gui/frontend/dist
       - name: go vet（gui 模块）
-        run: go vet ./...
+        # linux 用 gtk3 后端（webkit2gtk-4.1，22.04+ 兼容）；默认后端是
+        # gtk4/webkitgtk-6.0（仅 24.04+ 有）。windows/mac 忽略该 tag。
+        run: go vet -tags "gtk3" ./...
       - name: go build（壳）
-        run: go build -trimpath -ldflags="-s -w" -o dist/ghydra-gui${{ matrix.os == 'windows-2022' && '.exe' || '' }} .
+        run: go build -tags "gtk3" -trimpath -ldflags="-s -w" -o dist/ghydra-gui${{ matrix.os == 'windows-2022' && '.exe' || '' }} .
       - name: go build（spikecheck）
-        run: go build -o dist/ ./spikecheck
+        run: go build -tags "gtk3" -o dist/ ./spikecheck
       - name: xvfb 冒烟（linux：栈启动/窗口/托盘/autostart 往返）
         if: runner.os == 'Linux'
         run: xvfb-run -a timeout 90 ./dist/spikecheck
       - name: 记录壳体积
-        run: ls -la dist/
+        run: ls dist/
       - name: 上传壳产物
         uses: actions/upload-artifact@v4
         with:
