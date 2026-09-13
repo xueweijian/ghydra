@@ -136,7 +136,10 @@ cmd_scenario_a() {
   grep -q "已更新到 v1.0.1" "$D/apply.log" || { cat "$D/apply.log"; fail "apply 应成功"; }
   [ "$(run version)" = "ghydra version 1.0.1" ] || fail "升级后版本应 1.0.1（得 $(run version 2>&1)）"
   [ -f "$D/ghydra$EXT.old" ] || fail "old 凭证应在场"
-  grep -q '"confirmed":true' "$D/.ghydra/update.json" || fail "状态应 confirmed"
+  echo "A-debug: D=$D D_NATIVE=$D_NATIVE HOME-view: $(HOME="$(home_native)" "$D/ghydra$EXT" version >/dev/null 2>&1; echo ok)"
+  ls -la "$D/.ghydra" 2>&1 | head -8
+  [ -f "$(home_native)/.ghydra/update.json" ] && echo "A-debug: native 侧 update.json 在场" || echo "A-debug: native 侧也没有 update.json"
+  grep -q '"confirmed":true' "$D/.ghydra/update.json" || grep -q '"confirmed":true' "$(home_native)/.ghydra/update.json" || fail "状态应 confirmed"
   ok "A 正常链（1.0.0 → 1.0.1，凭证+状态齐）"
 }
 
@@ -193,7 +196,9 @@ cmd_scenario_d() {
   rm -f "$D/.ghydra/update.json"
 
   run update --api "$API" --trust-host 127.0.0.1 --cdn "" --db "$D/db.sqlite" >"$D/apply2.log" 2>&1 \
-    || { cat "$D/apply2.log"; cat "$D/serve.log"; fail "daemon 场景 apply 失败"; }
+    || { cat "$D/apply2.log"; echo "== serve.log（场景 serve）=="; cat "$D/serve.log"
+         echo "== .ghydra/serve.log（spawn daemon）=="; cat "$D/.ghydra/serve.log" 2>/dev/null
+         fail "daemon 场景 apply 失败"; }
   NEW_PID=$(grep -o '"pid":[0-9]*' "$D/.ghydra/serve.json" | head -1 | cut -d: -f2)
   [ "$NEW_PID" != "$SERVE_PID" ] || fail "daemon 应换 pid（旧 $SERVE_PID → 新 $NEW_PID）"
   TOKEN=$(cat "$D/.ghydra/api-token")

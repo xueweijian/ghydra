@@ -100,6 +100,7 @@ func (c daemonControlProd) WaitVersion(ctx context.Context, want string) error {
 	tick := time.NewTicker(500 * time.Millisecond)
 	defer tick.Stop()
 	var last string
+	n := 0
 	for {
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		req.Header.Set("X-GHydra-Token", tok)
@@ -112,13 +113,20 @@ func (c daemonControlProd) WaitVersion(ctx context.Context, want string) error {
 					Version string `json:"version"`
 				}
 				if json.Unmarshal(body, &st) == nil {
+					if last == "" && st.Version != "" {
+						log.Printf("[selfupdate] 对账首见 version=%q（期望 %q）", st.Version, want)
+					}
 					last = st.Version
 					if st.Version == want {
 						return nil
 					}
 				}
 			}
+			if n%20 == 0 { // 10s 一条心跳观测
+				log.Printf("[selfupdate] 对账中：port=%d last=%q want=%q", d.Port, last, want)
+			}
 		}
+		n++
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("daemon 版本对账超时（最后见到 %q，期望 %q）", last, want)

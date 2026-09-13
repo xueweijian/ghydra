@@ -148,6 +148,17 @@ func spawnServe(port int, dbPath string) (int, error) {
 	args = append(args, "--managed")
 	cmd := exec.Command(self, args...)
 	cmd.SysProcAttr = detachAttr() // 平台差异见 spawn_{windows,unix}.go
+	// 托管 serve 的输出落盘（append）：detached 子进程默认 /dev/null——
+	// daemon 是产品常驻进程，日志必须可追溯（W4 CI 考古同样受益）。
+	if d := ghydraDir(); d != "" {
+		if err := os.MkdirAll(d, 0o755); err == nil {
+			if f, ferr := os.OpenFile(filepath.Join(d, "serve.log"),
+				os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); ferr == nil {
+				cmd.Stdout, cmd.Stderr = f, f
+				go f.Close() // 子进程继承 fd 后本进程即可关（Wait 前后皆可）
+			}
+		}
+	}
 	if err := cmd.Start(); err != nil {
 		return 0, err
 	}
