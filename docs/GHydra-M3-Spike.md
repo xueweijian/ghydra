@@ -48,4 +48,8 @@
 
 ## 5. CI 状态
 
-- 首轮：待验证（ci-gui.yml 随本报告推送）。
+- **全绿（c37283f，2026-09-13）**：ci-gui 四 job（前端 + win/linux/mac）全 success。
+- linux xvfb 冒烟实跑通过：`PASS: wails v3 栈启动/窗口/托盘/autostart 往返 全部通过`——webkit2gtk-4.1 后端（-tags gtk3）下 wails v3 栈可完整启动。
+- 壳产物（artifact）：ubuntu 12.4MB / windows 12.7MB / macos 11.8MB（未做安装包，W6 打包）。
+- **三件套机检结论**：托盘（创建/图标/菜单）与自启（往返）linux 实证通过；win/mac 机制由上游同名实现覆盖，交互语义留真机清单（§4）。单实例 CI 无法机检，留真机清单。
+- **W0 结论：壳可用，v3 beta.20 锁定成立，进 W1（控制 API + 前端骨架）。**
