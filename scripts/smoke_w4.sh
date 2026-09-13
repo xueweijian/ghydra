@@ -213,8 +213,13 @@ cmd_scenario_d() {
          fail "daemon 场景 apply 失败"; }
   NEW_PID=$(grep -o '"pid":[0-9]*' "$D/.ghydra/serve.json" | head -1 | cut -d: -f2)
   [ "$NEW_PID" != "$SERVE_PID" ] || fail "daemon 应换 pid（旧 $SERVE_PID → 新 $NEW_PID）"
+  # 顺带断言：daemon 自写的运行态 pid 必须与真实监听者一致（服务端真相）
+  echo "D-debug: $(cat "$D/.ghydra/serve.json")"
   TOKEN=$(cat "$D/.ghydra/api-token")
-  V=$(curl -s -H "X-GHydra-Token: $TOKEN" "http://127.0.0.1:$SERVE_PORT/api/status" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+  # 端口以 serve.json 为准：端口冲突时托管 daemon 会迁移（CI windows 实证
+  # 19713→19714），脚本写死的端口会 curl 空
+  ACT_PORT2=$(grep -o '"port":[0-9]*' "$D/.ghydra/serve.json" | head -1 | cut -d: -f2)
+  V=$(curl -s -H "X-GHydra-Token: $TOKEN" "http://127.0.0.1:$ACT_PORT2/api/status" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
   [ "$V" = "1.0.1" ] || fail "新 daemon 版本应为 1.0.1（得 $V）"
   kill "$NEW_PID" 2>/dev/null || true
   ok "D daemon 对账（serve 换 pid + status 版本 1.0.1）"
