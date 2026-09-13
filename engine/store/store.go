@@ -343,7 +343,8 @@ func (s *Store) LoadTakeoverState() (on bool, takenAt time.Time, err error) {
 }
 
 // LoadSnapshotJSON 读快照 JSON；不存在或为 W4.5 之前的旧行返回 ok=false。
-func (s *Store) LoadSnapshotJSON() (settingJSON string, ok bool, err error) {	err = s.db.QueryRow(`SELECT setting_json FROM sysproxy_snapshot WHERE id=1`).
+func (s *Store) LoadSnapshotJSON() (settingJSON string, ok bool, err error) {
+	err = s.db.QueryRow(`SELECT setting_json FROM sysproxy_snapshot WHERE id=1`).
 		Scan(&settingJSON)
 	if err == sql.ErrNoRows {
 		return "", false, nil
