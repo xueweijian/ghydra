@@ -193,6 +193,8 @@ func serveCmd(args []string) {
 	schedOn := fs.Bool("scheduler", true, "IP 调度器（off = W1 直连行为，对照/逃生）")
 	dbPath := fs.String("db", defaultDBPath(), "SQLite 路径（空 = 不持久化）")
 	doctorInterval := fs.Duration("doctor-interval", 0, "自动 doctor 周期（0 = 关闭；ghydra on 默认 1h）")
+	rulesInterval := fs.Duration("rules-interval", 6*time.Hour, "规则自动拉取周期（30s 首拉不变；L3 真机实验可调短）")
+	rulesURL := fs.String("rules-url", "", "覆盖规则 A 源 URL（默认官方 repo raw；测试/镜像用，仍需合法签名）")
 	doctorRepo := fs.String("doctor-repo", probe.DefaultConfig().Repo, "自动 doctor 使用的仓库 owner/name")
 	cdn := fs.String("cdn", "", "B 通道 CDN 前缀（如 https://gh-proxy.com/；空 = 禁用切道，W3 默认化）")
 	managed := fs.Bool("managed", false, "由 ghydra on 拉起（退出时恢复系统代理）")
@@ -210,8 +212,8 @@ func serveCmd(args []string) {
 	}
 
 	// M3-W2：规则三级地板（embedded → disk 验签 → remote 热更）。
-	// sel/PAC 每次现取快照（零锁热生效）；调度器用启动期快照（池集合
-	// 热重建属 W2 phase 3 refresher）。
+	// sel/PAC 每次现取快照（零锁热生效）；调度器种子池经 refresher
+	// OnApply 回调热重建（phase 3 推模型）。
 	rulesDir := rules.DefaultRulesDir()
 	provider := rules.NewProvider(rulesDir)
 	m := provider.Snapshot().Matcher
@@ -220,6 +222,19 @@ func serveCmd(args []string) {
 			snap.Version, snap.Source, snap.ExpiresAt.Format(time.RFC3339))
 	} else if rulesDir != "" {
 		log.Printf("[rules] 磁盘规则缺失或验签失败，使用内嵌地板 v%d", snap.Version)
+	}
+
+	// phase 3：seen_max 持久化恢复先于一切远程拉取——回滚防线跨重启
+	// （R9：磁盘损坏回退 L0 后防线不回落）。
+	var ruleState rules.StateStore
+	var ruleDB *store.Store
+	if db, err := store.Open(*dbPath); err == nil {
+		ruleState = rulesStateAdapter{st: db}
+		ruleDB = db
+		restoreSeenMax(provider, ruleState)
+		log.Printf("[rules] seen_max 锚点 = %d（embedded/disk/持久化 取大）", provider.SeenMax())
+	} else {
+		log.Printf("[rules] 状态库不可用（%v）：无持久化 seen_max/退避", err)
 	}
 
 	var sel proxy.UpstreamSelector = proxy.SelectorFunc(func(host string) (string, bool) {
@@ -286,6 +301,23 @@ func serveCmd(args []string) {
 	shutdownCh := make(chan struct{})
 	var shutdownOnce sync.Once
 	cdnFn := func() string { return *cdn }
+	// phase 3：规则拉取管线（吃自身 A/B 狗粮）。A=IP 择优直连，
+	// B=CDN 前缀代理同一路径（运行时热更）。调度器热重建走 OnApply。
+	rawRulesURL := "https://raw.githubusercontent.com/xueweijian/ghydra/main/rules/current.json"
+	if *rulesURL != "" {
+		rawRulesURL = *rulesURL // 测试/镜像覆盖；信任锚不变（签名仍必验）
+	}
+	rawRulesPath := "/" + rawRulesURL
+	rulesRef := rules.NewRefresher(provider, rules.RefresherConfig{
+		Interval: *rulesInterval,
+	}, rulesFetchA(pick), rulesFetchB(cdnFn, rawRulesPath), rawRulesURL, "", ruleState)
+	rulesRef.SetLogf(func(f string, a ...any) { log.Printf("[rules] "+f, a...) })
+	rulesRef.OnApply(func(snap *rules.Snapshot) { rulesSeedRebuild(sc, snap) })
+	rulesRef.Start()
+	defer rulesRef.Stop()
+	if ruleDB != nil {
+		defer ruleDB.Close()
+	}
 
 	srv := &proxy.Server{
 		Selector:    sel,
@@ -494,7 +526,10 @@ func serveCmd(args []string) {
 		},
 		GetStart:    tasks.start,
 		GetProgress: tasks.progress,
-		Rules:       func() api.RulesSnapshot { return mapRulesSnapshot(provider) },
+		Rules:       func() api.RulesSnapshot { return mapRulesSnapshot(provider, rulesRef) },
+		RulesRefresh: func() (string, error) {
+			return rulesRef.Trigger()
+		},
 	}, tok)
 
 	mux := http.NewServeMux()

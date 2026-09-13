@@ -11,3 +11,6 @@ worker/node_modules/
 
 # W2 规则签名本地状态
 rules/.lastsigned
+fakesite
+sign-rules
+.lastsigned

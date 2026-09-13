@@ -80,6 +80,8 @@ jobs:
           go-version: "1.24"
       - name: serve 装配冒烟（16 项断言，含 W2 规则地板×4）
         run: sh engine/cmd/ghydra/smoke_w1.sh
+      - name: W2 phase 3 毒化矩阵黑盒（refresher×fakesite 7 场景）
+        run: sh engine/cmd/ghydra/smoke_w2p3.sh
 
   # W4.5：Windows 平台行为证明（无 Windows 真机期间的开发替代）。
   # 真实跑注册表接管/恢复 + on/off 生命周期 + kill -9 崩溃对账。

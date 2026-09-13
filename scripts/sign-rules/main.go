@@ -34,6 +34,7 @@ func main() {
 	in := flag.String("in", "", "rules json 文件")
 	check := flag.Bool("check", false, "仅校验 schema 与签名存在性（CI 模式，无需私钥）")
 	force := flag.Bool("force", false, "跳过版本单调检查（仅限密钥轮换/重置）")
+	unsafe := flag.Bool("unsafe", false, "跳过 schema 校验（仅限测试向量生成——签出的文件运行时会拒，毒化矩阵 fixture 用）")
 	flag.Parse()
 	if *in == "" || (*key == "" && !*check) {
 		fmt.Fprintln(os.Stderr, "用法: sign-rules -key <seckey> -in <rules.json> [-force] | -check -in <rules.json>")
@@ -46,7 +47,7 @@ func main() {
 		}
 		return
 	}
-	if err := run(*key, *in, *force); err != nil {
+	if err := run(*key, *in, *force, *unsafe); err != nil {
 		fmt.Fprintln(os.Stderr, "sign-rules:", err)
 		os.Exit(1)
 	}
@@ -81,21 +82,27 @@ func checkOnly(inPath string) error {
 	return nil
 }
 
-func run(keyPath, inPath string, force bool) error {
+func run(keyPath, inPath string, force, unsafe bool) error {
 	data, err := os.ReadFile(inPath)
 	if err != nil {
 		return err
 	}
 	// 与运行时同一解析器：签名前确保能被所有客户端接受。
 	rf, err := rules.ParseRules(data)
+	version := int64(0)
 	if err != nil {
-		return fmt.Errorf("schema（与运行时同校验器）: %w", err)
+		if !unsafe {
+			return fmt.Errorf("schema（与运行时同校验器）: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "⚠️  -unsafe：schema 校验跳过（测试向量，运行时必拒）")
+	} else {
+		version = rf.Version
 	}
 	last, err := readLastSigned(filepath.Dir(inPath))
 	if err != nil {
 		return err
 	}
-	if !force && rf.Version <= last {
+	if !unsafe && !force && version <= last {
 		return fmt.Errorf("version %d <= 上次已签 %d；如为密钥轮换/重置请 -force", rf.Version, last)
 	}
 	priv, keyID, err := parseSecretKeyFile(keyPath)
@@ -104,7 +111,7 @@ func run(keyPath, inPath string, force bool) error {
 	}
 	sum := sha256.Sum256(data)
 	sig := signAndSelfVerify(priv, digestPrehash(data))
-	trusted := fmt.Sprintf("ghydra-rules v%d sha256=%x", rf.Version, sum)
+	trusted := fmt.Sprintf("ghydra-rules v%d sha256=%x", version, sum)
 	global := ed25519.Sign(priv, append(append([]byte{}, sig...), trusted...))
 	blob := append([]byte("ED"), keyID...)
 	blob = append(blob, sig...)
@@ -118,11 +125,11 @@ func run(keyPath, inPath string, force bool) error {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(filepath.Dir(inPath), ".lastsigned"),
-		[]byte(fmt.Sprintf("%d\n", rf.Version)), 0o644); err != nil {
+		[]byte(fmt.Sprintf("%d\n", version)), 0o644); err != nil {
 		return err
 	}
 	fmt.Printf("signed %-24s version=%d key_id=%s sha256=%x\n",
-		filepath.Base(out), rf.Version, hex(keyID), sum)
+		filepath.Base(out), version, hex(keyID), sum)
 	return nil
 }
 

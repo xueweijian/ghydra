@@ -219,6 +219,24 @@ func (p *Provider) Apply(data, sig []byte) (*Snapshot, error) {
 	return snap, nil
 }
 
+// SetSeenMax 提升回滚防线锚点（phase 3 装配层从 rules_state 恢复；
+// 只增不减——回退 seenMax 等于亲手拆掉 A3 防线）。取
+// max(embedded, disk, 持久化值) 中的持久化值在此收口。
+func (p *Provider) SetSeenMax(v int64) {
+	p.mu.Lock()
+	if v > p.seenMax {
+		p.seenMax = v
+	}
+	p.mu.Unlock()
+}
+
+// SeenMax 当前回滚防线锚点（诊断用）。
+func (p *Provider) SeenMax() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.seenMax
+}
+
 // DiskDir 返回磁盘对目录（诊断/装配用；空串 = 纯内存模式）。
 func (p *Provider) DiskDir() string { return p.dir }
 

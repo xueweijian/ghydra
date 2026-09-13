@@ -74,6 +74,9 @@ type Store struct {
 	stop   chan struct{}
 }
 
+// schemaExtras 同包分文件注册的追加 DDL（Open 时依序执行，全部幂等）。
+var schemaExtras []string
+
 type lastGoodOp struct {
 	domain, ip string
 	score, rtt float64
@@ -151,6 +154,14 @@ CREATE INDEX IF NOT EXISTS idx_doctor_run ON doctor_log(run_id);`); err != nil {
 kind TEXT PRIMARY KEY,
 payload TEXT NOT NULL,
 taken_at INTEGER NOT NULL)`)
+
+	// 追加 schema（同包分文件注册；全部幂等 IF NOT EXISTS）。
+	for _, ddl := range schemaExtras {
+		if _, err := db.Exec(ddl); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 
 	s := &Store{
 		db:     db,
