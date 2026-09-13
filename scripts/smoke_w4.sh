@@ -25,7 +25,12 @@ fail() { echo "SMOKE-W4 FAIL: $1" >&2; exit 1; }
 ok()   { echo "PASS: $1"; }
 
 load_state() { . "$STATE"; }
-run()  { HOME="$D" "$D/ghydra$EXT" "$@"; }
+# exe 侧 HOME 必须是原生路径：git-bash 的 /tmp 与 Windows 进程视角
+# （C:\tmp\...）分叉会让状态/断言两边各写各的（CI windows 实证）。
+home_native() {
+  if [ -n "$D_NATIVE" ]; then echo "$D_NATIVE"; else echo "$D"; fi
+}
+run()  { HOME="$(home_native)" "$D/ghydra$EXT" "$@"; }
 
 cmd_setup() {
   BIN=$(mktemp -d /tmp/w4bin.XXXXXX)
@@ -63,6 +68,25 @@ PORT_POISON=$PORT_POISON
 SRV_PID=$SRV_PID
 EOF
   [ "$(run version)" = "ghydra version 1.0.0" ] || fail "初始版本应为 1.0.0"
+
+  # Windows：转原生路径（pwd -W → C:/...），exe 侧 HOME 用
+  D_NATIVE="$D"
+  if [ "$(go env GOOS)" = "windows" ]; then
+    D_NATIVE=$(cd "$D" && pwd -W 2>/dev/null || echo "$D")
+  fi
+
+  cat > "$STATE" <<EOF
+ROOT='$ROOT'
+BIN='$BIN'
+D='$D'
+D_NATIVE='$D_NATIVE'
+PUB='$PUB'
+KEY='$KEY'
+EXT='$EXT'
+PORT=$PORT
+PORT_POISON=$PORT_POISON
+SRV_PID=$SRV_PID
+EOF
   ok "setup（双版本 + releasesrv 就绪，初始 1.0.0）"
 }
 
@@ -118,7 +142,7 @@ cmd_scenario_d() {
   load_state
   API="http://127.0.0.1:$PORT/repos/xueweijian/ghydra"
   SERVE_PORT=19713
-  HOME="$D" "$D/ghydra$EXT" serve --listen "127.0.0.1:$SERVE_PORT" --db "$D/db.sqlite" --managed >"$D/serve.log" 2>&1 &
+  HOME="$(home_native)" "$D/ghydra$EXT" serve --listen "127.0.0.1:$SERVE_PORT" --db "$D/db.sqlite" --managed >"$D/serve.log" 2>&1 &
   SERVE_PID=$!
   for _ in $(seq 1 40); do grep -q "PAC: http" "$D/serve.log" 2>/dev/null && break; sleep 0.25; done
   ACT_PORT=$(grep -o "PAC: http://127.0.0.1:[0-9]*" "$D/serve.log" | head -1 | grep -o "[0-9]*$")

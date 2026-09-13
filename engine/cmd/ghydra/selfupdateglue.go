@@ -44,8 +44,21 @@ func (c daemonControlProd) Alive() bool {
 }
 
 func (c daemonControlProd) Stop() error {
-	stopServe(loadDaemonState())
-	return nil
+	d := loadDaemonState()
+	stopServe(d)
+	if d == nil {
+		return nil
+	}
+	// 等端口真正下来再返回：紧随其后的 Start 会打开同一个 SQLite——
+	// 旧进程未死就 spawn 新 daemon 会撞库锁（CI ubuntu 实证）。
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if !serveAlive(d.Port) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil // 超时放行：Start 侧自有对账兜底
 }
 
 func (c daemonControlProd) Start() error {

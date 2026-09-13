@@ -114,21 +114,24 @@ jobs:
       - name: 场景 D daemon 对账
         shell: bash
         run: sh scripts/smoke_w4.sh scenario-d
-      - name: teardown
-        if: always()
-        shell: bash
-        run: sh scripts/smoke_w4.sh teardown
       - name: 失败状态转储推分支（尽力而为）
         if: failure()
         shell: bash
         run: |
           NAME="smoke-w4-fail-${{ matrix.os }}.txt"
-          { echo "run ${{ github.run_id }} ${{ matrix.os }}"; cat /tmp/w4state.env 2>/dev/null; } > "$NAME" || true
+          { echo "run ${{ github.run_id }} ${{ matrix.os }}"; cat /tmp/w4state.env 2>/dev/null
+            for f in apply.log apply2.log serve.log srv.log rb.log; do
+              p="/tmp/w4data."*/"$f"; echo "==== $f ===="; tail -40 $p 2>/dev/null
+            done } > "$NAME" || true
           git config user.email "ci@ghydra.local" && git config user.name "ci-bot"
           git checkout -B ci-failure-log
           git add -f "$NAME" || true
           git -c user.email=ci@ghydra.local -c user.name=ci-bot commit -m "smoke_w4 fail (run ${{ github.run_id }}, ${{ matrix.os }})" || true
           git push -f origin ci-failure-log || true
+      - name: teardown
+        if: always()
+        shell: bash
+        run: sh scripts/smoke_w4.sh teardown
 
   # W4.5：Windows 平台行为证明（无 Windows 真机期间的开发替代）。
   # 真实跑注册表接管/恢复 + on/off 生命周期 + kill -9 崩溃对账。
