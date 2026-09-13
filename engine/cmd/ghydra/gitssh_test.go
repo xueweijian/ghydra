@@ -123,7 +123,10 @@ func TestRestoreManagedOnOffWithSnapshots(t *testing.T) {
 	gcfg := filepath.Join(tmp, "gitconfig")
 	t.Setenv("GIT_CONFIG_GLOBAL", gcfg)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("HOME", tmp) // defaultSSHConfigPath 经 UserHomeDir 读 HOME——必须隔离，否则污染真实 ~/.ssh
+	// os.UserHomeDir()：Linux/mac 读 HOME，Windows 读 USERPROFILE——
+	// 两个都设，否则 defaultSSHConfigPath() 打到真实 profile（CI 抓出）。
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	db := filepath.Join(tmp, "t.db")
 
 	// 布置 git 快照态

@@ -277,8 +277,15 @@ func TestEndToEndLSRemoteRewrite(t *testing.T) {
 // PRoot 沙箱的对象跨仓传输有 stat 层 bug（unpack-objects 后 stat 不到
 // 刚写的对象），沙箱跑会假失败。
 func TestMain(m *testing.M) {
-	// 所有用例共享一个隔离 gitconfig；跨用例通过每个用例自行清理
+	// 所有用例共享一个隔离 gitconfig；跨用例通过每个用例自行清理。
+	// 必须预创建为空文件：git config --global --list 在 GIT_CONFIG_GLOBAL
+	// 指向不存在的文件时报 128，CI 上字母序最先跑的子进程 git
+	// （clone integration 测试）会因此挂掉。
 	tmp := filepath.Join(os.TempDir(), "gitcfg-test-gitconfig")
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err == nil {
+		f.Close()
+	}
 	os.Setenv("GIT_CONFIG_GLOBAL", tmp)
 	os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	code := m.Run()

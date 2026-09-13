@@ -1,10 +1,10 @@
 // fakesite 是故障演练的黑盒源站工具（M2-W4 drill）。
 //
-//   -mode tlsdead  : accept 后立即关闭（TLS 握手死特征）
-//   -mode rst      : accept 后以 RST 关闭（SO_LINGER 0）
-//   -mode blackhole: accept 后挂起不响应
-//   -mode cdn      : 明文 HTTP，任意路径返回 200 + 固定内容（模拟 B 通道静态资产）
-//   -mode 403      : 自签 TLS + 源头 403（源级故障；需配 -cert 信任才可用）
+//	-mode tlsdead  : accept 后立即关闭（TLS 握手死特征）
+//	-mode rst      : accept 后以 RST 关闭（SO_LINGER 0）
+//	-mode blackhole: accept 后挂起不响应
+//	-mode cdn      : 明文 HTTP，任意路径返回 200 + 固定内容（模拟 B 通道静态资产）
+//	-mode 403      : 自签 TLS + 源头 403（源级故障；需配 -cert 信任才可用）
 //
 // 仅为演练/测试造数，不进 ghydra 主程序。
 package main
