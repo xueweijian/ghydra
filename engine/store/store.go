@@ -145,6 +145,12 @@ CREATE INDEX IF NOT EXISTS idx_doctor_run ON doctor_log(run_id);`); err != nil {
 	// W4.5 迁移：老库补 setting_json 列（列已存在时报错忽略）。
 	// v0.1 未发布，无真实快照需要迁移；旧行 setting_json=NULL 视为无快照。
 	_, _ = db.Exec(`ALTER TABLE sysproxy_snapshot ADD COLUMN setting_json TEXT`)
+	// W4 迁移：git/ssh 托管快照（kind = 'git' | 'ssh'；payload 由调用方
+	// 序列化——git 存键值 JSON，ssh 存整文件 base64）。
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS managed_snapshot(
+kind TEXT PRIMARY KEY,
+payload TEXT NOT NULL,
+taken_at INTEGER NOT NULL)`)
 
 	s := &Store{
 		db:     db,
@@ -330,6 +336,34 @@ func (s *Store) LoadSnapshotJSON() (settingJSON string, ok bool, err error) {
 // DeleteSnapshot 删除快照（恢复完成后调用）。
 func (s *Store) DeleteSnapshot() error {
 	_, err := s.db.Exec(`DELETE FROM sysproxy_snapshot WHERE id=1`)
+	return err
+}
+
+// --- 托管快照（git/ssh 集成；同步低频，同 sysproxy 快照三函数模式） ---
+
+// SaveManagedSnapshot 按种类持久化托管快照。payload 由调用方序列化。
+func (s *Store) SaveManagedSnapshot(kind, payload string) error {
+	_, err := s.db.Exec(`INSERT INTO managed_snapshot(kind, payload, taken_at) VALUES(?, ?, ?)
+ON CONFLICT(kind) DO UPDATE SET payload=excluded.payload, taken_at=excluded.taken_at`,
+		kind, payload, time.Now().UnixMilli())
+	return err
+}
+
+// LoadManagedSnapshot 读托管快照；不存在返回 ok=false。
+func (s *Store) LoadManagedSnapshot(kind string) (payload string, ok bool, err error) {
+	err = s.db.QueryRow(`SELECT payload FROM managed_snapshot WHERE kind=?`, kind).Scan(&payload)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return payload, true, nil
+}
+
+// DeleteManagedSnapshot 删除托管快照（恢复完成后调用）。
+func (s *Store) DeleteManagedSnapshot(kind string) error {
+	_, err := s.db.Exec(`DELETE FROM managed_snapshot WHERE kind=?`, kind)
 	return err
 }
 

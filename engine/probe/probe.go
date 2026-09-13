@@ -61,6 +61,10 @@ type Config struct {
 	UserAgent  string
 	// TLSConfig 可选，仅测试/企业受控环境注入；生产默认使用系统根。
 	TLSConfig *tls.Config
+	// DialOverride host→IP：强制指定拨号 IP（SNI/Host 语义不变）。
+	// 用途：故障演练（把 github 系压到本地假源站）与自建镜像映射；
+	// 直连列同样生效——演练需要"两列同死"的 NetworkFault 场景。
+	DialOverride map[string]string
 }
 
 // DefaultConfig 返回生产默认值。所有超时都由调用方可控，避免 doctor
@@ -267,9 +271,22 @@ func (r *Runner) client(mode Mode) (*http.Client, error) {
 			tlsConfig.MinVersion = tls.VersionTLS12
 		}
 	}
+	dialer := &net.Dialer{Timeout: r.cfg.Timeout, KeepAlive: 30 * time.Second}
+	baseDial := dialer.DialContext
+	dialCtx := baseDial
+	if len(r.cfg.DialOverride) > 0 {
+		dialCtx = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if h, port, err := net.SplitHostPort(addr); err == nil {
+				if ip, hit := r.cfg.DialOverride[h]; hit {
+					addr = net.JoinHostPort(ip, port)
+				}
+			}
+			return baseDial(ctx, network, addr)
+		}
+	}
 	tr := &http.Transport{
 		Proxy:                 nil, // 明确禁止 HTTP(S)_PROXY 污染 direct 组
-		DialContext:           (&net.Dialer{Timeout: r.cfg.Timeout, KeepAlive: 30 * time.Second}).DialContext,
+		DialContext:           dialCtx,
 		TLSClientConfig:       tlsConfig,
 		TLSHandshakeTimeout:   r.cfg.Timeout,
 		ResponseHeaderTimeout: r.cfg.Timeout,
@@ -440,7 +457,13 @@ func (r *Runner) runTCP(ctx context.Context, mode Mode, scenario, name, target s
 		conn, err = dialHTTPConnect(ctx, r.cfg.ProxyURL, target, r.cfg.Timeout, r.cfg.UserAgent)
 	} else {
 		d := net.Dialer{Timeout: r.cfg.Timeout, KeepAlive: 30 * time.Second}
-		conn, err = d.DialContext(ctx, "tcp", target)
+		tgt := target
+		if h, port, err2 := net.SplitHostPort(target); err2 == nil {
+			if ip, hit := r.cfg.DialOverride[h]; hit {
+				tgt = net.JoinHostPort(ip, port)
+			}
+		}
+		conn, err = d.DialContext(ctx, "tcp", tgt)
 	}
 	if err != nil {
 		c.Error = err.Error()

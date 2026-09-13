@@ -11,6 +11,7 @@ package main
 //   - 进程活性用端口 TCP 探活判定（避开跨平台进程 API 差异）
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -22,6 +23,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/xueweijian/ghydra/engine/gitcfg"
+	"github.com/xueweijian/ghydra/engine/sshcfg"
 	"github.com/xueweijian/ghydra/engine/store"
 	"github.com/xueweijian/ghydra/engine/sysproxy"
 )
@@ -279,7 +282,48 @@ func offCmd(args []string) {
 	d := loadDaemonState()
 	stopServe(d)
 	removeDaemonState()
+	// W4：git/ssh 托管快照一并还原（D6：off 语义 = 完全退出不留痕）
+	restoreManagedOnOff(*dbPath)
 	fmt.Println("GHydra 已退出，系统代理已恢复。")
+}
+
+// restoreManagedOnOff off 路径的 git/ssh 快照还原。失败仅告警不阻塞
+// （sysproxy 已恢复；用户可 ghydra git disable / ssh disable 单独重试）。
+func restoreManagedOnOff(dbPath string) {
+	if dbPath == "" {
+		return
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return
+	}
+	defer st.Close()
+	if payload, ok, _ := st.LoadManagedSnapshot(storeGitKind); ok {
+		var snap gitcfg.Snapshot
+		if json.Unmarshal([]byte(payload), &snap) == nil {
+			if err := gitcfg.Disable(gitcfg.CLIExec{}, snap); err == nil {
+				_ = st.DeleteManagedSnapshot(storeGitKind)
+				log.Printf("git insteadOf 键已还原（%d 个）", len(snap.Written))
+			} else {
+				log.Printf("git 键还原失败（快照保留，可 ghydra git disable 重试）: %v", err)
+			}
+		} else {
+			log.Printf("git 快照损坏，跳过自动还原（可 ghydra git status 查看）")
+		}
+	}
+	if payload, ok, _ := st.LoadManagedSnapshot(storeSSHKind); ok {
+		b, err := base64.StdEncoding.DecodeString(payload)
+		bak := sshBackupPath(dbPath)
+		if err == nil && os.WriteFile(bak, b, 0o600) == nil {
+			cfgPath := defaultSSHConfigPath()
+			if _, err := sshcfg.Disable(cfgPath, bak, false); err == nil {
+				_ = st.DeleteManagedSnapshot(storeSSHKind)
+				log.Printf("ssh config 已还原（%s）", cfgPath)
+			} else {
+				log.Printf("ssh config 还原失败（可 ghydra ssh disable 重试）: %v", err)
+			}
+		}
+	}
 }
 
 // daemonStatusJSON /status 端点的数据源由 serveCmd 装配（需要调度器

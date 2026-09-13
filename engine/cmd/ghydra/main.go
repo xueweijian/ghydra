@@ -68,6 +68,10 @@ func main() {
 		loadtestCmd(os.Args[2:])
 	case "get":
 		getCmd(os.Args[2:])
+	case "git":
+		gitCmd(os.Args[2:])
+	case "ssh":
+		sshCmd(os.Args[2:])
 	case "serve":
 		serveCmd(os.Args[2:])
 	case "on":
@@ -93,6 +97,8 @@ func usage() {
   ghydra off                                          恢复系统代理 + 停止 serve
   ghydra serve [--listen ADDR] [--scheduler on|off] [--cdn URL]   前台运行（调试用）
   ghydra get <url> [-o 文件] [--cdn URL] [--json] [--stats]  下载器（A 择优/B 续传切道）
+  ghydra git enable|disable|status                   insteadOf 集成（fetch→CDN/push→直连）
+  ghydra ssh enable|disable|status                   ssh config 443 写入（22 断 443 通时）
   ghydra status                                      last_good 持久化观察口
   ghydra doctor [--mode direct|proxy|both]          六场景探针+直连对照+分类报告
   ghydra bench [--mode bootstrap|direct|proxy]     自举链或六域名存活报告
@@ -141,6 +147,40 @@ func statusCmd(args []string) {
 // SQLite last_good 恢复与池枯竭 DoH 补充；真实流量成败即探测信号。
 // --scheduler=off 回退 W1 行为（直连域名，系统 DNS）——A/B 对照与
 // 故障逃生通道。
+// reorderFlags Go flag 包防御：flag 解析在第一个位置参数处停止，
+// bool flag 后面手写取值（--scheduler on）会把 on 当位置参数、吞掉其后
+// 全部 flag（W2 get 已踩过一次，serve 同样暴露）。策略：bool flag 无值、
+// 其余 flag 收拢在前、位置参数统一垫底，任何书写顺序都能正确解析。
+func reorderFlags(args []string, boolFlags ...string) []string {
+	boolSet := map[string]bool{}
+	for _, b := range boolFlags {
+		boolSet[b] = true
+		boolSet["-"+b] = true
+	}
+	var flags, pos []string
+	expectVal := ""
+	for _, a := range args {
+		if expectVal != "" { // 上一个字符串 flag 的取值
+			flags = append(flags, a)
+			expectVal = ""
+			continue
+		}
+		if strings.HasPrefix(a, "-") {
+			flags = append(flags, a)
+			name := strings.TrimLeft(a, "-")
+			if i := strings.IndexByte(name, '='); i >= 0 {
+				continue // --name=value 自带取值
+			}
+			if !boolSet[a] && !boolSet[name] {
+				expectVal = a // 字符串型 flag：下一参是其值
+			}
+			continue
+		}
+		pos = append(pos, a)
+	}
+	return append(flags, pos...)
+}
+
 func serveCmd(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	listen := fs.String("listen", "127.0.0.1:9801", "本地监听地址（仅 IPv4 回环）")
@@ -152,7 +192,8 @@ func serveCmd(args []string) {
 	doctorRepo := fs.String("doctor-repo", probe.DefaultConfig().Repo, "自动 doctor 使用的仓库 owner/name")
 	cdn := fs.String("cdn", "", "B 通道 CDN 前缀（如 https://gh-proxy.com/；空 = 禁用切道，W3 默认化）")
 	managed := fs.Bool("managed", false, "由 ghydra on 拉起（退出时恢复系统代理）")
-	_ = fs.Parse(args)
+	dialOverride := fs.String("dial-override", "", "host=ip[,host=ip…] 强制上游拨号 IP（演练/镜像映射）")
+	_ = fs.Parse(reorderFlags(args, "scheduler", "managed"))
 
 	// on 已在拉起前完成残留对账并写入快照；managed 子进程启动
 	// 期间快照存在但 serve.json 还没落盘，不能把当前接管误判成
@@ -189,6 +230,34 @@ func serveCmd(args []string) {
 	var pick func(string) (string, bool)
 	if sc != nil {
 		pick = func(host string) (string, bool) { return sc.Pick(host) }
+	}
+
+	// --dial-override host=ip[,host=ip…]：强制指定上游拨号 IP（SNI/Host
+	// 语义不变）。用途：故障演练（把 github 系压到本地假源站）与自建镜像
+	// 映射。A 路径（serve 拨号）与 doctor 直连列探针同时生效——演练需要
+	// "两列同死" 的 NetworkFault 场景。
+	ovMap := map[string]string{}
+	if *dialOverride != "" {
+		for _, pair := range strings.Split(*dialOverride, ",") {
+			kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+			if len(kv) != 2 || kv[0] == "" || kv[1] == "" {
+				log.Fatalf("--dial-override 形态非法: %q", pair)
+			}
+			ovMap[kv[0]] = kv[1]
+		}
+		if len(ovMap) > 0 {
+			orig := sel
+			sel = proxy.SelectorFunc(func(host string) (string, bool) {
+				ip, ok := orig.Select(host)
+				if !ok {
+					return "", false
+				}
+				if ov, hit := ovMap[host]; hit {
+					return net.JoinHostPort(ov, "443"), true
+				}
+				return ip, ok
+			})
+		}
 	}
 
 	var conns atomic.Int64
@@ -283,7 +352,7 @@ func serveCmd(args []string) {
 	var stopDoctor func()
 	if *doctorInterval > 0 && *dbPath != "" {
 		stopDoctor = startDoctorLoop(*doctorInterval, *dbPath, *doctorRepo,
-			"http://"+ln.Addr().String(), *cdn, chRouter.NotifyDoctor, chRouter.NotifyB)
+			"http://"+ln.Addr().String(), *cdn, chRouter.NotifyDoctor, chRouter.NotifyB, ovMap)
 		defer stopDoctor()
 	}
 

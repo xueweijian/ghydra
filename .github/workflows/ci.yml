@@ -80,6 +80,19 @@ jobs:
       - name: 基准（记录基线，阈值断言于 M1 引入）
         run: go test ./engine/sni/... -bench . -benchmem -run '^$'
 
+  # W4：黑盒故障演练——真实 serve 进程 + fakesite 网络层故障注入，
+  # 断言 403/RST 类故障 30s 内切道（M2 退出标准①的进程级证明）。
+  drill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: git 集成端到端（真 git clone 经 insteadOf 落到假 CDN）
+        run: go test -tags=integration ./engine/gitcfg/ -run TestEndToEndCloneRewrite -v -count=1
+      - run: bash scripts/drill.sh
+
   build:
     needs: [fmt, test]
     runs-on: ubuntu-latest

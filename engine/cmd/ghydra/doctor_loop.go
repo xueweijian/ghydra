@@ -22,7 +22,7 @@ import (
 // （channel.Verdict）回调给调用方（serve 的通道决策器）。
 // notifyB 回调 B 列健康（nil = 无 B 通道）。
 func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL, cdnPrefix string,
-	notify func(channel.Verdict), notifyB func(bool)) func() {
+	notify func(channel.Verdict), notifyB func(bool), dialOverride map[string]string) func() {
 	if interval <= 0 || dbPath == "" || proxyURL == "" {
 		return func() {}
 	}
@@ -34,6 +34,7 @@ func startDoctorLoop(interval time.Duration, dbPath, repo, proxyURL, cdnPrefix s
 		cfg.Repo = repo
 		cfg.ProxyURL = proxyURL
 		cfg.CDNPrefix = cdnPrefix
+		cfg.DialOverride = dialOverride
 		r := probe.New(cfg)
 		// 先确认本地代理监听并能返回 /status。on 启动时 doctor
 		// goroutine 与 serve 并行，不能把启动瞬间的 connection refused
