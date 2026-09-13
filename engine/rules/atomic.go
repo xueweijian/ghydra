@@ -56,12 +56,14 @@ func writeAtomicFile(path string, data []byte) error {
 // LoadPair 读取成对文件（原始字节）。任一缺失返回 os.ErrNotExist 包装；
 // 内容级校验（schema+验签）由 provider 负责——本层只保证「读到的字节
 // 要么是完整旧对、要么是完整新对」。
+// Windows：读写并发窗口内读者打开文件可能撞 transient sharing violation，
+// 读侧带重试（readfile_windows.go；posix 直通）。
 func LoadPair(dir, base string) (data, sig []byte, err error) {
-	data, err = os.ReadFile(filepath.Join(dir, base))
+	data, err = readFileRetry(filepath.Join(dir, base))
 	if err != nil {
 		return nil, nil, err
 	}
-	sig, err = os.ReadFile(filepath.Join(dir, base+".minisig"))
+	sig, err = readFileRetry(filepath.Join(dir, base+".minisig"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("rules: sig missing for %s: %w", base, err)
 	}

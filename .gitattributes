@@ -1,0 +1,4 @@
+# 签名文件与被签内容锁字节完整性：eol 转换 = 字节改变 = 验签必失败
+*.minisig -text
+engine/rules/testdata/** -text
+rules/** -text
