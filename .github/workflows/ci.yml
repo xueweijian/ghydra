@@ -37,7 +37,17 @@ jobs:
         with:
           go-version: "1.24"
       - run: go vet ./...
-      - run: go test ./... -race -count=1
+      - name: go test（失败摘要进 job summary，便于无日志权限时远程定位）
+        run: |
+          set -o pipefail
+          go test ./... -race -count=1 -v 2>&1 | tee /tmp/test.out | grep -E "^(=== RUN|--- FAIL|--- PASS|FAIL|ok  )" | grep -Ev "^=== RUN|--- PASS" || true
+          if grep -q -- "--- FAIL" /tmp/test.out; then
+            {
+              "echo" "## Windows/CI test failures"
+              grep -E -- "--- FAIL|^    [a-z_]+_test.go" /tmp/test.out | head -50
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
   # M3-W1：控制 API 端到端冒烟（token/Host/SSE/dist 托管/旧端点回归）。
   api-smoke:

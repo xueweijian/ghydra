@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 // atomicEnv 在临时目录构造一对真实可验签的规则（版本 version）。
@@ -94,6 +95,7 @@ func TestAtomicConcurrentReadWrite(t *testing.T) {
 			default:
 			}
 			got, gotSig, err := LoadPair(dir, base)
+			time.Sleep(500 * time.Microsecond) // 读侧非紧循环（Windows 共享窗口照应）
 			if err != nil {
 				t.Errorf("reader load: %v", err)
 				return
@@ -121,6 +123,7 @@ func TestAtomicConcurrentReadWrite(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		time.Sleep(time.Millisecond) // 真实节奏：provider 落盘是低频事件，非紧循环
 	}
 	close(stop)
 	wg.Wait()
