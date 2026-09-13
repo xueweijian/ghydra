@@ -18,7 +18,7 @@
 | M7 | Git 集成 | dev-sidecar | 官方git文档 | insteadOf按仓库大小自动分流 |
 | M8 | 系统代理接管 | clash-verge-rev | dev-sidecar | PAC自动生成+端口冲突自迁移 |
 | M9 | 远程配置/自更新 | dev-sidecar | minisign | ed25519签名+原子替换+回滚 |
-| M10 | GUI | — (反例:dev-sidecar) | Watt Toolkit、syncthing(Web UI 模式) | Wails 纯 Go 壳 ≤15MB，GUI只调本地API |
+| M10 | GUI | — (反例:dev-sidecar) | Watt Toolkit、syncthing(Web UI 模式) | Wails 纯 Go 壳，GUI只调本地API（体积无红线，2026-09-13） |
 | M11 | 体检引擎 | 自研（无先例） | Ghips测速思路 | 六场景探针+根因分类器 |
 | M12 | 众包遥测 | 自研 | — | 匿名哈希、无用户标识 |
 
@@ -141,7 +141,7 @@
 - [ ] 反面教材：dev-sidecar 147MB 包
 - [ ] 核对 Wails v3 是否已发 3.0 正式版（2026-09 时为 beta.19，v2 活跃维护至 v2.13.0/2026-07）
 - [ ] 备选参考：syncthing 的「纯 Go 引擎 + 浏览器 Web UI」零壳模式（体积最小，体验降级的兜底方案）
-- **新实现**：GUI 只通过本地 HTTP API 控制引擎；引擎必须可 headless（服务器/CI 场景）；总包 ≤15MB。壳选型决策规则见 DevWorkflow §6：v2.13+ 保底，M3 spike 时若 v3 已转正则切 v3；spike 必验托盘常驻 + 开机自启 + 单实例唤醒三件套，验不过则退 syncthing 模式
+- **新实现**：GUI 只通过本地 HTTP API 控制引擎；引擎必须可 headless（服务器/CI 场景）。壳选型决策规则见 DevWorkflow §6：v2.13+ 保底，M3 spike 时若 v3 已转正则切 v3；spike 必验托盘常驻 + 开机自启 + 单实例唤醒三件套，验不过则退 syncthing 模式
 
 ### M11 体检引擎（自研，无先例）
 - [ ] 唯一可借：Ghips 的「301 指纹」判定法推广到多场景
@@ -163,7 +163,7 @@
 | SQLite | `modernc.org/sqlite` | pure-Go，免 CGO，交叉编译友好 |
 | 签名 | `filippo.io/ed25519` | minisign 兼容格式 |
 | HTTP/2 | `golang.org/x/net/http2` | 仅 M4 需要 |
-| CLI | **手写子命令路由** | 2026-09-12 拍板不引入 cobra：手写路由已工作良好，15MB 红线优先，依赖白名单保持干净 |
+| CLI | **手写子命令路由** | 2026-09-12 拍板不引入 cobra：手写路由已工作良好，依赖白名单保持干净（体积红线已于 2026-09-13 取消，但白名单仍然有效——供应链审计与攻击面控制） |
 | TLS 解析 | **手写** | 不用 utls（合规审计考量） |
 | GUI | Wails（v2.13+ 保底 / v3 视 M3 时转正与否）+ SolidJS | 纯 Go 壳；引擎独立进程，经本地 HTTP API 通信 |
 
