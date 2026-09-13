@@ -128,6 +128,11 @@ jobs:
           git add -f "$NAME" || true
           git -c user.email=ci@ghydra.local -c user.name=ci-bot commit -m "smoke_w4 fail (run ${{ github.run_id }}, ${{ matrix.os }})" || true
           git push -f origin ci-failure-log || true
+          # 第二通道：gh api PUT（git push 在本 job 三轮未落地，原因未明——
+          # 换传输验证是否凭据/传输层问题）
+          gh api --method PUT "repos/xueweijian/ghydra/contents/ci-dump-${{ matrix.os }}.txt" \
+            -f message="smoke_w4 fail dump run ${{ github.run_id }}" \
+            -f content="$(base64 -w0 "$NAME")" || true
       - name: teardown
         if: always()
         shell: bash
