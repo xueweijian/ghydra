@@ -39,6 +39,17 @@ jobs:
       - run: go vet ./...
       - run: go test ./... -race -count=1
 
+  # M3-W1：控制 API 端到端冒烟（token/Host/SSE/dist 托管/旧端点回归）。
+  api-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: serve 装配冒烟（12 项断言）
+        run: sh engine/cmd/ghydra/smoke_w1.sh
+
   # W4.5：Windows 平台行为证明（无 Windows 真机期间的开发替代）。
   # 真实跑注册表接管/恢复 + on/off 生命周期 + kill -9 崩溃对账。
   # 注意：这是平台证明，不等于大陆网络下的现场验收（DevWorkflow 三环境分工）。

@@ -1,7 +1,7 @@
 #!/bin/sh
-# W1 serve 集成冒烟（本地）：API 面 + 双模式托管 + 旧端点回归
+# W1 serve 集成冒烟（本地 + CI）：API 面 + 双模式托管 + 旧端点回归
 set -e
-cd /var/minis/workspace/ghydra/engine
+cd "$(dirname "$0")/../.." # engine/
 go build -o /tmp/ghydra-smoke/ghydra ./cmd/ghydra
 
 PORT=9877

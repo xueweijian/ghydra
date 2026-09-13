@@ -10,6 +10,9 @@ export default defineConfig({
     outDir: "dist",
     target: "chrome110",
   },
+  test: {
+    environment: "node", // golden 契约测试无需 DOM
+  },
   server: {
     proxy: {
       // 开发期直连本机 daemon

@@ -23,11 +23,12 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: gui/frontend/package-lock.json
-      - name: npm ci + build
+      - name: npm ci + build + golden 契约测试
         working-directory: gui/frontend
         run: |
           npm ci
           npm run build
+          npx vitest run
       - name: 上传 dist（供桌面矩阵嵌入）
         uses: actions/upload-artifact@v4
         with:
