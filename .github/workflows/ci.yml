@@ -38,6 +38,9 @@ jobs:
           go-version: "1.24"
       - run: go vet ./...
       - name: go test（全文失败输出进 job summary + artifact 双保险）
+        # ⚠️ windows runner 的 run: 默认 pwsh——bash 语法(set +e/重定向/$VAR)
+        # 第一行就 CommandNotFound 崩（2026-09-13 三轮 windows 假失败的根因）。
+        shell: bash
         run: |
           set +e
           go test ./... -race -count=1 -v > /tmp/test.out 2>&1
