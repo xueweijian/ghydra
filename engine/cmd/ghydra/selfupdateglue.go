@@ -173,11 +173,12 @@ func newSelfupdateUpdater(dbPath, cdn, apiBase string, trustHosts map[string]boo
 			body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 			return body, resp.StatusCode, err
 		},
-		InstallDir: filepath.Dir(self),
-		StatePath:  sp,
-		Files:      installFiles(),
-		Daemon:     daemonControlProd{dbPath: dbPath},
-		Log:        log.Printf,
+		InstallDir:       filepath.Dir(self),
+		StatePath:        sp,
+		Files:            installFiles(),
+		Daemon:           daemonControlProd{dbPath: dbPath},
+		SelfCheckTimeout: 30 * time.Second, // Defender 扫新 exe 可超 10s 默认值
+		Log:              log.Printf,
 	}, nil
 }
 

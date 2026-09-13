@@ -231,7 +231,7 @@ func (u *Updater) Rollback() error {
 		if !u.Daemon.Alive() {
 			_ = u.Daemon.Stop()
 			_ = u.Daemon.Start()
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			if err := u.Daemon.WaitVersion(ctx, u.Version); err != nil {
 				u.logf("回滚后 daemon 对账: %v", err)
@@ -306,7 +306,7 @@ func (u *Updater) rollbackSync(badVersion string, daemonWas bool, cause error) e
 	if daemonWas && u.Daemon != nil {
 		_ = u.Daemon.Stop()
 		_ = u.Daemon.Start()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		if err := u.Daemon.WaitVersion(ctx, u.Version); err != nil {
 			u.logf("回滚后旧 daemon 对账: %v", err)
@@ -355,7 +355,7 @@ func (u *Updater) restartDaemonAndWait(ctx context.Context, want string) error {
 	if err := u.Daemon.Start(); err != nil {
 		return fmt.Errorf("起新 daemon: %w", err)
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	waitCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	return u.Daemon.WaitVersion(waitCtx, want)
 }

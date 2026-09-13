@@ -175,7 +175,9 @@ cmd_scenario_d() {
   SERVE_PORT=19713
   HOME="$(home_native)" "$D/ghydra$EXT" serve --listen "127.0.0.1:$SERVE_PORT" --db "$D/db.sqlite" --managed >"$D/serve.log" 2>&1 &
   SERVE_PID=$!
-  for _ in $(seq 1 40); do grep -q "PAC: http" "$D/serve.log" 2>/dev/null && break; sleep 0.25; done
+  # 60s 窗口：CI 2 核 + 美国机房到国内 DoH 冷启动可达数十秒（ubuntu 实证；
+  # macos 快得多）——api-smoke 的 serve 不做 DoH 内联路径，不能类推
+  for _ in $(seq 1 240); do grep -q "PAC: http" "$D/serve.log" 2>/dev/null && break; sleep 0.25; done
   ACT_PORT=$(grep -o "PAC: http://127.0.0.1:[0-9]*" "$D/serve.log" | head -1 | grep -o "[0-9]*$")
   [ -n "$ACT_PORT" ] || { cat "$D/serve.log"; fail "serve 未就绪"; }
   SERVE_PORT=$ACT_PORT
