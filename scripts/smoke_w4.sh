@@ -68,6 +68,11 @@ cmd_setup() {
   D=$(mktemp -d /tmp/w4data.XXXXXX)   # 安装目录 + HOME 沙箱（BIN/D 分离）
   PUB="$ROOT/engine/selfupdate/testdata/test.pub"
   KEY="$ROOT/engine/selfupdate/testdata/test.key"
+  if [ "$(go env GOOS)" = "windows" ]; then
+    # ldflags 注入路径 exe 侧读：POSIX 形式 /d/a/... 原生 Go 打不开（CI 实证）
+    PUB=$(cd "$ROOT/engine/selfupdate/testdata" && pwd -W)/test.pub
+    KEY=$(cd "$ROOT/engine/selfupdate/testdata" && pwd -W)/test.key
+  fi
   EXT=""
   [ "$(go env GOOS)" = "windows" ] && EXT=".exe"
 

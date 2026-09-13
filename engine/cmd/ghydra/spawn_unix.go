@@ -13,3 +13,9 @@ func detachAttr() *syscall.SysProcAttr {
 func killServe(pid int) {
 	syscall.Kill(pid, syscall.SIGTERM)
 }
+
+// killServeHard Unix：SIGKILL 强杀（Stop() 优雅超时后的兜底——慢死的
+// serve 会让重启的新 serve 撞端口迁移，见 selfupdateglue.go Stop 注释）。
+func killServeHard(pid int) {
+	syscall.Kill(pid, syscall.SIGKILL)
+}

@@ -18,3 +18,8 @@ func detachAttr() *syscall.SysProcAttr {
 func killServe(pid int) {
 	exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run()
 }
+
+// killServeHard Windows：taskkill /F（同 Unix 语义，Stop 超时兜底）。
+func killServeHard(pid int) {
+	exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid)).Run()
+}

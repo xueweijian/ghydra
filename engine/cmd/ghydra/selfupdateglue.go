@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
 	"strings"
 	"time"
 
@@ -51,6 +52,9 @@ func (c daemonControlProd) Stop() error {
 	}
 	// 等端口真正下来再返回：紧随其后的 Start 会打开同一个 SQLite——
 	// 旧进程未死就 spawn 新 daemon 会撞库锁（CI ubuntu 实证）。
+	// 优雅退出 >5s 时升级 SIGKILL：serve 有端口迁移逻辑，慢死的旧
+	// serve 会让新 serve 迁去 +1 端口，对账就会轮询到垂死的旧进程
+	// （CI ubuntu 实证："最后见到 1.0.0，期望 1.0.1"）。
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if !serveAlive(d.Port) {
@@ -58,7 +62,15 @@ func (c daemonControlProd) Stop() error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return nil // 超时放行：Start 侧自有对账兜底
+	killServeHard(d.PID)
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if !serveAlive(d.Port) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil
 }
 
 func (c daemonControlProd) Start() error {
