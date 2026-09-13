@@ -47,7 +47,7 @@ func writeAtomicFile(path string, data []byte) error {
 	if err = f.Close(); err != nil {
 		return fmt.Errorf("rules: close %s: %w", tmp, err)
 	}
-	if err = os.Rename(tmp, path); err != nil {
+	if err = renameAtomic(tmp, path); err != nil {
 		return fmt.Errorf("rules: rename %s: %w", tmp, err)
 	}
 	return nil
