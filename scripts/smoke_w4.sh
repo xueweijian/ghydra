@@ -9,6 +9,7 @@
 #   C 投毒链：资产签名后篡改 → apply 拒 + 安装零破坏
 #   D daemon 对账：serve 在跑 → apply → 新 pid + /api/status 版本跳变
 set -e
+set -x   # CI 失败考古：全命令留痕（tee 进 job 日志/失败分支）
 cd "$(dirname "$0")/.." || exit 1
 ROOT=$PWD
 export HOME="${HOME:-/root}"   # W2 教训：GOCACHE 依赖 HOME

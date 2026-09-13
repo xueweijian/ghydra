@@ -106,13 +106,15 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          set -x
           cp /tmp/smoke_w4.out smoke-w4-failure.out
           git config user.email "ci@ghydra.local"
           git config user.name "ci-bot"
           git checkout -B ci-failure-log
           git add -f smoke-w4-failure.out
-          git commit -m "smoke_w4 failure log (run ${{ github.run_id }}, ${{ matrix.os }})"
-          git push -f origin ci-failure-log
+          git -c user.email=ci@ghydra.local -c user.name=ci-bot commit -m "smoke_w4 failure log (run ${{ github.run_id }}, ${{ matrix.os }})" || echo "commit 无变更（可能同名文件已在）"
+          git push -f origin ci-failure-log || echo "push 失败（看上方 set -x 输出）"
+          git status --short
 
   # W4.5：Windows 平台行为证明（无 Windows 真机期间的开发替代）。
   # 真实跑注册表接管/恢复 + on/off 生命周期 + kill -9 崩溃对账。
