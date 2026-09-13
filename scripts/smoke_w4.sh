@@ -21,8 +21,39 @@ STATE=/tmp/w4state.env
 PORT=19711
 PORT_POISON=19712
 
-fail() { echo "SMOKE-W4 FAIL: $1" >&2; exit 1; }
-ok()   { echo "PASS: $1"; }
+fail() {
+  echo "SMOKE-W4 FAIL: $1" >&2
+  dump_on_fail || true   # 现场转储（CI 考古；本地无害）
+  exit 1
+}
+ok() { echo "PASS: $1"; }
+
+# dump_on_fail 把场景日志提交到 ci-failure-log（凭据 = checkout 注入的
+# credential helper；尽力而为）。四轮 job 级推送未落地后的脚本级通道。
+dump_on_fail() {
+  [ -n "$CI" ] || return 0
+  set +e
+  NAME="smoke-w4-fail-${RUNNER_OS:-local}.txt"
+  OUT="$ROOT/$NAME"
+  { echo "== smoke_w4 fail: $1 =="
+    cat "$STATE" 2>/dev/null
+    for f in apply.log apply2.log serve.log srv.log rb.log; do
+      echo "==== $f ===="
+      tail -50 "$D/$f" 2>/dev/null
+      tail -50 /tmp/w4c.*/"$f" 2>/dev/null
+    done } > "$OUT" 2>&1
+  cd "$ROOT" || return 0
+  git config user.email "ci@ghydra.local"
+  git config user.name "ci-bot"
+  git checkout -B ci-failure-log 2>>"$OUT"
+  git add -f "$NAME" 2>>"$OUT"
+  git commit -m "smoke_w4 fail dump ($RUNNER_OS)" 2>>"$OUT"
+  git push -f origin ci-failure-log >>"$OUT" 2>&1
+  cd - >/dev/null
+  # push 结果本身也写进文件——若下次 push 成功即可读成败记录
+  rm -f "$ROOT/$NAME"
+  return 0
+}
 
 load_state() { . "$STATE"; }
 # exe 侧 HOME 必须是原生路径：git-bash 的 /tmp 与 Windows 进程视角

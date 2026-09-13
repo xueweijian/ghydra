@@ -114,22 +114,17 @@ jobs:
       - name: 场景 D daemon 对账
         shell: bash
         run: sh scripts/smoke_w4.sh scenario-d
-      - name: 失败状态转储推分支（尽力而为）
+      - name: 失败状态转储（gh api 第二通道，脚本内已有 git 通道）
         if: failure()
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           NAME="smoke-w4-fail-${{ matrix.os }}.txt"
           { echo "run ${{ github.run_id }} ${{ matrix.os }}"; cat /tmp/w4state.env 2>/dev/null
             for f in apply.log apply2.log serve.log srv.log rb.log; do
               p="/tmp/w4data."*/"$f"; echo "==== $f ===="; tail -40 $p 2>/dev/null
             done } > "$NAME" || true
-          git config user.email "ci@ghydra.local" && git config user.name "ci-bot"
-          git checkout -B ci-failure-log
-          git add -f "$NAME" || true
-          git -c user.email=ci@ghydra.local -c user.name=ci-bot commit -m "smoke_w4 fail (run ${{ github.run_id }}, ${{ matrix.os }})" || true
-          git push -f origin ci-failure-log || true
-          # 第二通道：gh api PUT（git push 在本 job 三轮未落地，原因未明——
-          # 换传输验证是否凭据/传输层问题）
           gh api --method PUT "repos/xueweijian/ghydra/contents/ci-dump-${{ matrix.os }}.txt" \
             -f message="smoke_w4 fail dump run ${{ github.run_id }}" \
             -f content="$(base64 -w0 "$NAME")" || true
