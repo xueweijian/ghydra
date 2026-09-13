@@ -2,18 +2,22 @@
 # W1 serve 集成冒烟（本地 + CI）：API 面 + 双模式托管 + 旧端点回归
 set -e
 cd "$(dirname "$0")/../.." # engine/
-go build -o /tmp/ghydra-smoke/ghydra ./cmd/ghydra
+export HOME="${HOME:-/root}"  # 沙箱会话 HOME 可能空（GOCACHE 依赖）
+BIN=/tmp/ghydra-smoke-bin
+D=/tmp/ghydra-smoke
+mkdir -p "$BIN"
+go build -o "$BIN/ghydra" ./cmd/ghydra
 
 PORT=9877
 TOK=smoketoken123
-D=/tmp/ghydra-smoke
+rm -rf "$D"  # 干净起跑：场景 16 落盘的规则/库不得跨运行残留
 mkdir -p "$D/dist"
 echo '<html><body>GHydra W1 panel</body></html>' > "$D/dist/index.html"
 
 HOME_BAK="$HOME"
 export HOME="$D"   # token 落 $D/.ghydra/api-token
 
-"$D/ghydra" serve --listen 127.0.0.1:$PORT --api-token "$TOK" \
+"$BIN/ghydra" serve --listen 127.0.0.1:$PORT --api-token "$TOK" \
   --scheduler=false --gui-dist "$D/dist" > "$D/serve.log" 2>&1 &
 SRV=$!
 trap 'kill $SRV 2>/dev/null || true' EXIT
@@ -91,14 +95,14 @@ code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$PORT/some/spa/ro
 pass "gui-dist 托管 + SPA fallback"
 
 # 11. token 文件生成 + 0600（ghydra token 负责生成；serve 显式注入不落盘是正确行为）
-out=$("$D/ghydra" token --file "$D/.ghydra/api-token2" --json)
+out=$("$BIN/ghydra" token --file "$D/.ghydra/api-token2" --json)
 echo "$out" | grep -q '"token"' || fail "token 子命令 json: $out"
 perm=$(ls -l "$D/.ghydra/api-token2" | cut -c1-10)
 [ "$perm" = "-rw-------" ] || fail "token 权限: $perm"
 pass "token 文件生成 + 0600"
 
 # 12. ghydra token 回读一致（默认路径 load-or-create）
-out2=$("$D/ghydra" token --file "$D/.ghydra/api-token2" | head -1)
+out2=$("$BIN/ghydra" token --file "$D/.ghydra/api-token2" | head -1)
 tok2=$(echo "$out" | sed 's/.*"token": *"\([^"]*\)".*/\1/')
 [ "$out2" = "$tok2" ] || fail "token 回读不一致: $out2 vs $tok2"
 pass "ghydra token 回读一致"
@@ -106,21 +110,25 @@ pass "ghydra token 回读一致"
 echo "=== W1 serve 冒烟全绿 ==="
 
 # 13. M3-W2 规则地板：无磁盘规则 → /api/rules = embedded v1
+#     phase 3：refresher 已装配 → next_at 有调度计划（RFC3339 "2…"开头）
 body=$(curl -s -H "X-GHydra-Token: $TOK" http://127.0.0.1:$PORT/api/rules)
 echo "$body" | grep -q '"source":"embedded"' || fail "无磁盘规则应 embedded: $body"
 echo "$body" | grep -q '"version":1' || fail "内嵌版本 1: $body"
-echo "$body" | grep -q '"refresh":{"last_result":"","last_at":"","next_at":"","running":false}' || fail "refresh 零值形态: $body"
-pass "GET /api/rules → embedded 地板 + refresh 零值"
+echo "$body" | grep -q '"refresh":{"last_result":"","last_at":"","next_at":"2' || fail "refresh 形态（next_at 应有值）: $body"
+echo "$body" | grep -q '"running":false' || fail "refresh 不应在跑: $body"
+pass "GET /api/rules → embedded 地板 + refresher 已装配"
 
 # 14. status 帧携带规则摘要（单一真相：version/source 与 /api/rules 一致）
 body=$(curl -s -H "X-GHydra-Token: $TOK" http://127.0.0.1:$PORT/api/status)
 echo "$body" | grep -q '"rules":{"version":1,"source":"embedded","stale":false}' || fail "status.rules: $body"
 pass "status.rules 摘要与快照一致"
 
-# 15. rules/refresh 未装配 refresher → 503（phase 3 接入后改 202 断言）
+# 15. rules/refresh 已装配（phase 3）→ 200 异步触发；紧接第二发
+#     撞单飞窗口 409 / 已完成 200（ErrBusy 精确语义由 api 单测覆盖）
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-GHydra-Token: $TOK" http://127.0.0.1:$PORT/api/rules/refresh)
-[ "$code" = "503" ] || fail "refresh 未装配应 503，得 $code"
-pass "POST /api/rules/refresh → 503（refresher phase 3）"
+[ "$code" = "200" ] || fail "refresh 已装配应 200，得 $code"
+curl -s -X POST -H "X-GHydra-Token: $TOK" http://127.0.0.1:$PORT/api/rules/refresh | grep -qE '"refresh_id"|refresh already in flight' || fail "refresh 响应应为 refresh_id 或 busy"
+pass "POST /api/rules/refresh → 200 异步触发（phase 3 接真）"
 
 # 16. 真签名链端到端：repo 真源对（keys.go 冻结公钥签名）落盘 →
 #     重启 serve 加载 disk 源 + PAC 含真源域名
@@ -130,7 +138,7 @@ mkdir -p "$D/.ghydra/rules"
 cp ../rules/current.json "$D/.ghydra/rules/"
 cp ../rules/current.json.minisig "$D/.ghydra/rules/"
 RV=$(python3 -c "import json;print(json.load(open('$D/.ghydra/rules/current.json'))['version'])" 2>/dev/null || echo "?")
-"$D/ghydra" serve --listen 127.0.0.1:$PORT --api-token "$TOK" \
+"$BIN/ghydra" serve --listen 127.0.0.1:$PORT --api-token "$TOK" \
   --scheduler=false --gui-dist "$D/dist" > "$D/serve2.log" 2>&1 &
 SRV=$!
 i=0
