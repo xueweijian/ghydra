@@ -291,9 +291,13 @@ func serveCmd(args []string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/pac", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ns-proxy-autoconfig")
+		// GUI 壳/浏览器面板与 daemon 分源（wails://、file:// 等），
+		// 只读端点放行跨域；W3-W1 的 /api/* 会用 token+Host 校验收紧。
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		fmt.Fprint(w, m.PAC(fmt.Sprintf("127.0.0.1:%d", portOf(actualAddr))))
 	})
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*") // 只读端点，同上
 		out := map[string]any{
 			"listen":    actualAddr,
 			"scheduler": *schedOn,

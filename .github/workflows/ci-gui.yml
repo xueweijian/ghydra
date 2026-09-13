@@ -1,0 +1,92 @@
+name: ci-gui
+
+# M3 GUI 线独立流水线（引擎线在 ci.yml）。
+# 触发面：gui/** 与本文件；PR 仅同 paths。
+on:
+  push:
+    branches: [main]
+    paths: ["gui/**", ".github/workflows/ci-gui.yml"]
+  pull_request:
+    paths: ["gui/**", ".github/workflows/ci-gui.yml"]
+
+env:
+  WAILS_VERSION: v3.0.0-beta.20 # 升级必须三平台全绿（DevWorkflow §6 纪律）
+
+jobs:
+  frontend:
+    name: 前端构建（solid+vite）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gui/frontend/package-lock.json
+      - name: npm ci + build
+        working-directory: gui/frontend
+        run: |
+          npm ci
+          npm run build
+      - name: 上传 dist（供桌面矩阵嵌入）
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: gui/frontend/dist/
+          retention-days: 7
+
+  desktop:
+    name: 桌面壳构建+冒烟（${{ matrix.os }}）
+    needs: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04, macos-latest]
+        include:
+          - os: windows-2022
+            cgo: "0" # windows 纯 Go（go-webview2），runner 无 mingw
+          - os: ubuntu-24.04
+            cgo: "1"
+          - os: macos-latest
+            cgo: "1"
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: ${{ matrix.cgo }}
+    defaults:
+      run:
+        working-directory: gui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25" # wails v3 要求 go >= 1.25
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 安装 linux 桌面依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev xvfb
+      - name: 还原前端 dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: gui/frontend/dist
+      - name: go vet（gui 模块）
+        run: go vet ./...
+      - name: go build（壳）
+        run: go build -trimpath -ldflags="-s -w" -o dist/ghydra-gui${{ matrix.os == 'windows-2022' && '.exe' || '' }} .
+      - name: go build（spikecheck）
+        run: go build -o dist/ ./spikecheck
+      - name: xvfb 冒烟（linux：栈启动/窗口/托盘/autostart 往返）
+        if: runner.os == 'Linux'
+        run: xvfb-run -a timeout 90 ./dist/spikecheck
+      - name: 记录壳体积
+        run: ls -la dist/
+      - name: 上传壳产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghydra-gui-${{ matrix.os }}
+          path: gui/dist/
+          retention-days: 14

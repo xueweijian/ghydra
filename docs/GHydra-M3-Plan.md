@@ -7,7 +7,7 @@
 ## 0. 背景与硬约束
 
 - **体积红线已取消（2026-09-13 用户拍板）**：安装包不设上限，实测记录进发布说明供参考（CLI 当前 10–11MB）。不改变壳选型——Wails 拍板的核心理由是纯 Go 单一技术栈 + CI 免装 Rust + GUI 与引擎解耦。
-- **Wails 版本现状（2026-09-13 API 核实）**：v3 = beta.20（2026-09-10，日均一版逼近 3.0），**仍未转正** → 决策规则 #2 生效：**锁 v2.13+**（拍板确认）。v3 转正后按规则 #1 一次性迁移，不与功能周混。
+- **Wails 版本现状（2026-09-13 API 核实）**：v3 = beta.20（2026-09-10，日均一版逼近 3.0），官方口径 "API is stable"。**2026-09-13 用户拍板：只用 v3 做壳**（覆盖 DevWorkflow §6 原「beta 不用」规则）——v2 路线作废（无原生托盘 #1010）。纪律：锁死 beta.20，升级须 CI 三平台全绿，3.0 正式版后迁移。
 - **v2 已知短板**：无原生托盘（wailsapp/wails#1010，同进程 "basically impossible"）——W0 spike 终局（拍板：spike 顺序 A1→A2→C）。
 - **M2 交付盘点（M3 的地基）**：serve/on/off/get/status/doctor/git/ssh 全 CLI 面；channel Router（三态熔断 + doctor 驱动恢复）；get 下载器（A/B 择路 + Range 续传 + 段轨迹）；gitcfg/sshcfg 快照恢复；TS Worker 模板；fakesite + drill 黑盒演练 CI 化。
 - **MITM 回归 v1.0（2026-09-13 拍板，D6）**：这是本方案相对初稿的最大增量——它同时补上 M2-D1 的架构空洞（浏览器 CONNECT 流量原本 A 专属、无 B 兜底；MITM 后 URL 可见，浏览器流量可切 CDN）。
@@ -21,17 +21,15 @@
 - 开机自启自启的是 GUI 入口；加速可用性**永不依赖 GUI 存活**（daemon 独立进程，GUI 崩 = 重开窗口）。
 - 单二进制理由是省第二份 Go runtime + 安装/更新路径单一，非体积（红线已取消）。
 
-### D2 · 壳与托盘：三路线 spike 终局（W0）
+### D2 · 壳与托盘：Wails v3（2026-09-13 用户拍板：只用 v3）
 
-| 路线 | 构成 | 已知风险 |
-|---|---|---|
-| **A1（首选）** | Wails v2.13 窗口（无托盘）+ **托盘独立进程**（daemon 内可选 systray 模块，getlantern/systray 系纯 Go） | 两事件循环分属两进程，规避 #1010；macOS detached 进程 NSStatusItem 待验 |
-| A2 | Wails v2.13 + energye/systray 同进程 | macOS 已知冲突；Windows 报告可行 |
-| **C（兜底）** | syncthing 零壳：无 Wails，serve 托管 Web UI + systray + 浏览器面板 | 体验降级但零壳风险 |
-
-- spike 顺序 **A1 → A2 → C**（拍板），判定矩阵 = 三件套（托盘常驻 / 开机自启 / 单实例唤醒）× Windows/macOS。
-- **单实例与唤醒**：TCP 端口 bind（serve 已有）+ GUI 层锁文件；唤醒 = Windows 命名事件/窗口消息，unix domain socket。
-- **开机自启：自研 ~100 行**（拍板，win Run 键 / macOS LaunchAgent plist / Linux XDG autostart）——平台写入在 sysproxy、gitcfg、sshcfg 里已是熟路，不引库。
+- **v3 = beta.20 锁定**（2026-09-13 拍板，覆盖 DevWorkflow §6 原决策规则 #2）。v2 路线（v2.13/v2.15）作废——v2 无原生托盘（#1010）。
+- **三件套全部 v3 内建（W0 已核实 beta.20 API）**：
+  - 托盘 = `SystemTray`（进程内，AttachWindow 点击唤起/隐藏窗口、SetMenu 菜单、SetTooltip）；
+  - 单实例 = `Options.SingleInstance`（UniqueID + OnSecondInstanceLaunch 回调 → 首实例把面板带到前台）；
+  - 自启 = `AutostartManager`（win Run 键 / macOS SMAppService 或 LaunchAgent / XDG autostart——与原自研方案同机制，**自研方案作废**，拍板 #5 随 v3 决策被原生实现取代）。
+- spike 判定矩阵 = 三件套 × Windows/macOS（Linux 尽力）；CI 机检部分 = linux xvfb 冒烟（栈启动/窗口/托盘创建/autostart 往返，`gui/spikecheck`）；交互行为（可见性/点击语义）留真机清单。
+- v3 平台级翻车的逃生门 = syncthing 零壳（C）不变。
 
 ### D3 · 控制 API（engine/api）：REST + SSE，本机安全模型
 
@@ -81,7 +79,7 @@
 ### W0 · 壳 spike（终局周）
 | 任务 | 交付 | 测试 |
 |---|---|---|
-| wails v2.13 + SolidJS 最小壳，三平台 CI 出包（ubuntu apt libgtk-3-dev/libwebkit2gtk，win 自带 WebView2，mac xcode） | CI GUI job 模板 | 三平台 build 绿 |
+| wails v3（beta.20 锁定）+ SolidJS 最小壳，三平台 CI 出包（ubuntu apt libgtk-3-dev/libwebkit2gtk，win 自带 WebView2，mac xcode） | CI GUI job 模板 | 三平台 build 绿 |
 | 三件套矩阵：A1/A2/C × win/mac | spike 分支 | 托盘常驻/自启/单实例唤醒逐项勾验 |
 | 自启自研三平台 + 单实例锁与唤醒 | `engine/autostart`、`engine/singleinstance` | 平台单测 + 手动清单 |
 | **产出：`docs/GHydra-M3-Spike.md` + 壳终局 + CI 模板合入** | | |
@@ -137,9 +135,9 @@
 
 | # | 风险 | 对策 |
 |---|---|---|
-| M3-R1 | v2 托盘同进程冲突（macOS 已知死） | A1 独立进程架构规避；spike 首验；C 兜底 |
+| M3-R1 | v3 beta 平台级翻车（托盘/单实例在真机不工作） | 逃生门不变：syncthing 零壳（C）；spike 真机清单首验 |
 | M3-R2 | CI 跑 wails 构建（linux webkit2gtk cgo / win webview2） | W0 产出 CI 模板并验证，失败即知 |
-| M3-R3 | v3 日更逼近 3.0 的诱惑 | 锁 v2.13 精确版本；转正后按规则 #1 一次性迁移 |
+| M3-R3 | v3 日更 churn / beta→beta API 破坏 | 锁死 beta.20 精确版本；升级必须 CI 三平台全绿才合入；3.0 正式版后一次性迁移 |
 | M3-R4 | 自更新半态破坏（更新中崩溃/断电） | 双目录 + 回滚 + ensureReconcile 对账；演练 CI 化 |
 | M3-R5 | localhost API 攻击面（rebinding/本机恶意进程） | 127.0.0.1 + Host 校验 + 写操作 token + 只读限流 |
 | M3-R6 | 规则签名私钥泄露 | 离线保管 + 版本单调 + rotation + 公钥冻结进二进制 |
@@ -163,5 +161,5 @@
 | 1 | F4 MITM 移出 v1.0？ | **不移出**（用户拍板，否决我的建议）——进 v1.0，范围与安全边界见 D6 |
 | 2 | 代码签名 | v1.0 无签名 + README 信任教学 |
 | 3 | 托盘架构 | spike 按 A1→A2→C |
-| 4 | Wails v3 | M3 窗口内维持 v2.13，转正后按规则 #1 迁移 |
+| 4 | Wails 版本 | **只用 v3**（2026-09-13 用户拍板，覆盖原规则 #2）：beta.20 锁定，升级须 CI 三平台全绿，3.0 正式版后迁移 |
 | 5 | 开机自启 | 自研 ~100 行 |
