@@ -97,24 +97,38 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-      - name: 升级演练（正常/回滚/投毒/daemon 对账）
+      # 场景拆独立 step：失败步骤名即定位（匿名 jobs API 可读步骤结论，
+      # 无需日志权限）。跨 step 状态经 /tmp/w4state.env（同 job VM 共享）。
+      - name: setup（双版本构建 + releasesrv）
         shell: bash   # pwsh 坑第 3+1 次：Windows 步骤一律显式 bash
-        run: |
-          sh scripts/smoke_w4.sh 2>&1 | tee /tmp/smoke_w4.out
-          exit ${PIPESTATUS[0]}
-      - name: push smoke log to branch（失败时；匿名 git fetch 可读）
+        run: sh scripts/smoke_w4.sh setup
+      - name: 场景 A 正常升级链
+        shell: bash
+        run: sh scripts/smoke_w4.sh scenario-a
+      - name: 场景 B 回滚 + bad_version
+        shell: bash
+        run: sh scripts/smoke_w4.sh scenario-b
+      - name: 场景 C 投毒拒
+        shell: bash
+        run: sh scripts/smoke_w4.sh scenario-c
+      - name: 场景 D daemon 对账
+        shell: bash
+        run: sh scripts/smoke_w4.sh scenario-d
+      - name: teardown
+        if: always()
+        shell: bash
+        run: sh scripts/smoke_w4.sh teardown
+      - name: 失败状态转储推分支（尽力而为）
         if: failure()
         shell: bash
         run: |
-          set -x
-          cp /tmp/smoke_w4.out smoke-w4-failure.out
-          git config user.email "ci@ghydra.local"
-          git config user.name "ci-bot"
+          NAME="smoke-w4-fail-${{ matrix.os }}.txt"
+          { echo "run ${{ github.run_id }} ${{ matrix.os }}"; cat /tmp/w4state.env 2>/dev/null; } > "$NAME" || true
+          git config user.email "ci@ghydra.local" && git config user.name "ci-bot"
           git checkout -B ci-failure-log
-          git add -f smoke-w4-failure.out
-          git -c user.email=ci@ghydra.local -c user.name=ci-bot commit -m "smoke_w4 failure log (run ${{ github.run_id }}, ${{ matrix.os }})" || echo "commit 无变更（可能同名文件已在）"
-          git push -f origin ci-failure-log || echo "push 失败（看上方 set -x 输出）"
-          git status --short
+          git add -f "$NAME" || true
+          git -c user.email=ci@ghydra.local -c user.name=ci-bot commit -m "smoke_w4 fail (run ${{ github.run_id }}, ${{ matrix.os }})" || true
+          git push -f origin ci-failure-log || true
 
   # W4.5：Windows 平台行为证明（无 Windows 真机期间的开发替代）。
   # 真实跑注册表接管/恢复 + on/off 生命周期 + kill -9 崩溃对账。
