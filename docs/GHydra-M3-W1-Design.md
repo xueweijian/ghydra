@@ -169,3 +169,13 @@ CI 变更：
 5. golden 生成 + 前端 types/client/sse + 状态页
 6. CI 两 workflow 更新 + 集成冒烟 + 全绿
 7. `ghydra token` + 文档收尾（本文件补实施结果）
+
+## 13. 实施结果（2026-09-13 收官）
+
+- **交付 commit**：afd7510（设计）/ 07fd713（engine/api）/ 847b07f（serve 装配 + 双入口核 + get 任务化）/ 4f0a29f（前端骨架 + CI）。
+- **测试**：engine/api 全绿（guards/端点/SSE/hub/golden + 时间戳形态锁定）；get 全绿（含 OnProgress 契约：表头首帧/节流/终态/切道通道名）；cmd 全仓回归（daemon 集成测试零破坏）；serve 冒烟 12/12（smoke_w1.sh，CI 化为 api-smoke job）；前端 vitest 11/11（golden 双端锁定）+ vite build。
+- **真面板验证**（serve 托管 dist + 浏览器）：SSE hello/status/conn 帧端到端实时；连接卡片/IP 池/连接流渲染正确；A 路径失败事件如实红显。发现并修复：`daemonBase()` 浏览器模式应默认 `location.origin`（serve 同源托管），壳模式回落 9801。
+- **对设计的两处偏差**（记录在案）：
+  1. DoctorFrame 增加 `error` 字段（手动触发失败也要上屏）；
+  2. git/ssh 的 CLI 保留原有富展示，核逻辑单源在 engine/gitcfg、engine/sshcfg——cmd 层编排不强行合并（输出形态差异属于展示层，非行为漂移风险点）。
+- **遗留到 W4**：窄屏 conn 流表格样式、壳进程注入 token（localStorage 为兜底）、Boost 页 CDN 取值贯通设置页。
