@@ -141,6 +141,12 @@ func spawnServe(port int, dbPath string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	return spawnServeAt(self, port, dbPath)
+}
+
+// spawnServeAt 用显式 exe 路径拉起托管 serve（自更新后必须传交换前捕获的
+// 路径，见 daemonControlProd 注释）。
+func spawnServeAt(self string, port int, dbPath string) (int, error) {
 	args := []string{"serve", "--listen", fmt.Sprintf("127.0.0.1:%d", port), "--doctor-interval", "1h"}
 	if dbPath != "" {
 		args = append(args, "--db", dbPath)
@@ -162,7 +168,7 @@ func spawnServe(port int, dbPath string) (int, error) {
 			}
 		}
 	}
-	err = cmd.Start()
+	err := cmd.Start()
 	if logFile != nil {
 		logFile.Close() // 子进程已持有自己的 fd 副本
 	}

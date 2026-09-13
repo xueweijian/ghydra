@@ -30,7 +30,24 @@ import (
 )
 
 // daemonControlProd daemon 编排生产实现：serve.json 是唯一运行态真相。
-type daemonControlProd struct{ dbPath string }
+//
+// selfPath：**交换前捕获**的自身 exe 路径。必须预捕获——os.Executable()
+// 在 Linux 读 /proc/self/exe，交换序列把运行中的 exe rename 成 .old 后，
+// 该链接即指向 .old，重启 daemon 就会拉起旧版二进制（CI ubuntu 实证：
+// 对账一直读到 "1.0.0"）。macOS proc_pidpath 同源风险；Windows PEB 路径
+// 不受 rename 影响，但统一走本字段。
+type daemonControlProd struct {
+	dbPath   string
+	selfPath string
+}
+
+// exePathForSpawn 拉起子进程用的 exe 路径（自更新场景必须是预捕获值）。
+func (c daemonControlProd) exePathForSpawn() (string, error) {
+	if c.selfPath != "" {
+		return c.selfPath, nil
+	}
+	return os.Executable()
+}
 
 // pubKeyOverrideFile ldflags 注入（main 包符号；冒烟/演练构建用测试钥匙，
 // 生产构建为空）。init 里转交 selfupdate 包（全路径 -X 在本工具链上
@@ -79,7 +96,12 @@ func (c daemonControlProd) Start() error {
 	if d != nil && d.Port != 0 {
 		port = d.Port
 	}
-	pid, err := spawnServe(port, c.dbPath)
+	self, err := c.exePathForSpawn()
+	if err != nil {
+		return err
+	}
+	log.Printf("[selfupdate] 起 daemon: exe=%s port=%d", self, port)
+	pid, err := spawnServeAt(self, port, c.dbPath)
 	if err != nil {
 		return err
 	}
@@ -196,7 +218,7 @@ func newSelfupdateUpdater(dbPath, cdn, apiBase string, trustHosts map[string]boo
 		InstallDir:       filepath.Dir(self),
 		StatePath:        sp,
 		Files:            installFiles(),
-		Daemon:           daemonControlProd{dbPath: dbPath},
+		Daemon:           daemonControlProd{dbPath: dbPath, selfPath: self},
 		SelfCheckTimeout: 30 * time.Second, // Defender 扫新 exe 可超 10s 默认值
 		Log:              log.Printf,
 	}, nil
@@ -218,7 +240,7 @@ func newBootUpdater(dbPath string) *selfupdate.Updater {
 		InstallDir: filepath.Dir(self),
 		StatePath:  sp,
 		Files:      installFiles(),
-		Daemon:     daemonControlProd{dbPath: dbPath},
+		Daemon:     daemonControlProd{dbPath: dbPath, selfPath: self},
 		Log:        log.Printf,
 	}
 }
