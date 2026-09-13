@@ -1,0 +1,1 @@
+{"runs":[{"mode":"proxy","scenario":"clone","checks":5,"passed":5,"reachable":5,"avg_duration_ms":812.3,"avg_ttfb_ms":301.7,"first_at":"2026-09-13T12:00:00Z","last_at":"2026-09-13T12:00:00Z"}]}
