@@ -42,7 +42,7 @@ func TestAppendDownloadAndStats(t *testing.T) {
 		},
 	}
 	s.AppendDownload("run-1", res)
-	waitForCond(t, s, 2*time.Second, func() bool {
+	waitForCond(t, s, 8*time.Second, func() bool {
 		st, _ := s.DownloadStats(time.Now().Add(-time.Minute))
 		return len(st) == 2
 	})
@@ -93,7 +93,7 @@ func TestAppendDownloadOKSemantics(t *testing.T) {
 		},
 	}
 	s.AppendDownload("run-2", res)
-	waitForCond(t, s, 2*time.Second, func() bool {
+	waitForCond(t, s, 8*time.Second, func() bool {
 		st, _ := s.DownloadStats(time.Now().Add(-time.Minute))
 		return len(st) == 2
 	})

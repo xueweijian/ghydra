@@ -625,6 +625,23 @@ func serveCmd(args []string) {
 	}
 	doctorProxyURL = "http://" + ln.Addr().String()
 
+	// 托管 serve 自己写运行态（实际监听端口）——端口是运行态真相，
+	// 只有绑定成功的进程知道最终值（端口冲突迁移后可能与请求值不同，
+	// W4 CI windows 实证：19713 未释放 → 实际绑 19714，而更新器的
+	// daemon 对账按 serve.json 轮询就会轮空）。非托管（前台调试）不写，
+	// 避免覆盖 ghydra on 建立的运行态。
+	if *managed {
+		if err := saveDaemonState(daemonState{
+			PID:       os.Getpid(),
+			Port:      portOf(ln.Addr().String()),
+			StartedAt: time.Now().Unix(),
+		}); err != nil {
+			log.Printf("serve.json 写入失败（对账将退化）: %v", err)
+		} else {
+			log.Printf("运行态已写入 serve.json: pid=%d port=%d", os.Getpid(), portOf(ln.Addr().String()))
+		}
+	}
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {

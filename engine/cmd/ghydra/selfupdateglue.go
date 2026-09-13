@@ -109,21 +109,33 @@ func (c daemonControlProd) Start() error {
 }
 
 // WaitVersion 轮询 /api/status 直到 version == want（token 走本机文件）。
+// 每轮重读 serve.json 取**当前**端口：托管 daemon 端口冲突时会迁移
+// （W4 CI windows 实证 19713→19714），写死的端口会一直轮空。
 func (c daemonControlProd) WaitVersion(ctx context.Context, want string) error {
-	d := loadDaemonState()
-	if d == nil {
-		return errors.New("serve.json 缺失，无法对账")
-	}
 	tok, err := api.LoadOrCreateToken(api.DefaultTokenPath())
 	if err != nil {
 		return fmt.Errorf("读 token: %w", err)
 	}
-	url := fmt.Sprintf("http://127.0.0.1:%d/api/status", d.Port)
 	tick := time.NewTicker(500 * time.Millisecond)
 	defer tick.Stop()
 	var last string
+	var lastPort int
 	n := 0
 	for {
+		d := loadDaemonState()
+		if d == nil {
+			select {
+			case <-ctx.Done():
+				return errors.New("serve.json 缺失，无法对账")
+			case <-tick.C:
+			}
+			continue
+		}
+		url := fmt.Sprintf("http://127.0.0.1:%d/api/status", d.Port)
+		if d.Port != lastPort {
+			log.Printf("[selfupdate] 对账端口 = %d（serve.json）", d.Port)
+			lastPort = d.Port
+		}
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		req.Header.Set("X-GHydra-Token", tok)
 		resp, err := http.DefaultClient.Do(req)
@@ -134,7 +146,7 @@ func (c daemonControlProd) WaitVersion(ctx context.Context, want string) error {
 				var st struct {
 					Version string `json:"version"`
 				}
-				if json.Unmarshal(body, &st) == nil {
+				if uerr := json.Unmarshal(body, &st); uerr == nil {
 					if last == "" && st.Version != "" {
 						log.Printf("[selfupdate] 对账首见 version=%q（期望 %q）", st.Version, want)
 					}
@@ -142,10 +154,18 @@ func (c daemonControlProd) WaitVersion(ctx context.Context, want string) error {
 					if st.Version == want {
 						return nil
 					}
+				} else {
+					err = uerr
 				}
+			} else {
+				err = fmt.Errorf("状态码 %d", resp.StatusCode)
 			}
-			if n%20 == 0 { // 10s 一条心跳观测
-				log.Printf("[selfupdate] 对账中：port=%d last=%q want=%q", d.Port, last, want)
+		}
+		if n%20 == 0 { // 10s 一条心跳观测（含失败原因）
+			if err != nil {
+				log.Printf("[selfupdate] 对账中：port=%d last=%q want=%q err=%v", lastPort, last, want, err)
+			} else {
+				log.Printf("[selfupdate] 对账中：port=%d last=%q want=%q", lastPort, last, want)
 			}
 		}
 		n++

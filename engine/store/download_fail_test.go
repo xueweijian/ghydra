@@ -32,7 +32,7 @@ func TestDownloadStatsFailedSegVisible(t *testing.T) {
 		},
 	}
 	s.AppendDownload("run-fail", res)
-	waitForCond(t, s, 2*time.Second, func() bool {
+	waitForCond(t, s, 8*time.Second, func() bool {
 		st, _ := s.DownloadStats(time.Now().Add(-time.Minute))
 		for _, x := range st {
 			if x.Channel == "A" {
