@@ -161,7 +161,8 @@
 | DoH | 自写 JSON 客户端 | alidns `/resolve` 接口，几十行 |
 | 熔断（起步） | `github.com/sony/gobreaker` | M2 成熟后自研状态机替换 |
 | SQLite | `modernc.org/sqlite` | pure-Go，免 CGO，交叉编译友好 |
-| 签名 | `filippo.io/ed25519` | minisign 兼容格式 |
+| 签名 | 标准库 `crypto/ed25519` + `golang.org/x/crypto/blake2b`（仅 minisign "ED" prehash 验签） | minisign 兼容格式；编解码手写零第三方（2026-09-13 W2 实装；"ED" 验签需 blake2b-512） |
+| 规则交叉验签（CI only） | `aead.dev/minisign` v0.3 | 独立第三方实现防自证（restic 同款）；不进主程序，仅 scripts/crosscheck |
 | HTTP/2 | `golang.org/x/net/http2` | 仅 M4 需要 |
 | CLI | **手写子命令路由** | 2026-09-12 拍板不引入 cobra：手写路由已工作良好，依赖白名单保持干净（体积红线已于 2026-09-13 取消，但白名单仍然有效——供应链审计与攻击面控制） |
 | TLS 解析 | **手写** | 不用 utls（合规审计考量） |

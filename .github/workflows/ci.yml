@@ -107,6 +107,34 @@ jobs:
           go test -tags=integration ./engine/gitcfg/ -run TestEndToEndCloneRewrite -v -count=1
       - run: bash scripts/drill.sh
 
+  # M3-W2 规则签名链发布纪律（拍板点 #1：本地离线签 + CI 只验不签）
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: schema 校验（与运行时同解析器）
+        run: go run ./scripts/sign-rules -check -in rules/current.json
+      - name: 第三方独立实现交叉验签（防自证）
+        run: go run ./scripts/crosscheck scripts/rules-release.pub rules/current.json.minisig rules/current.json
+      - name: 版本单调（规则文件有变更时必须递增）
+        run: |
+          if git diff --quiet HEAD~1 HEAD -- rules/current.json; then
+            echo "规则文件未变更，跳过单调检查"
+            exit 0
+          fi
+          prev=$(git show "HEAD~1:rules/current.json" | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])")
+          curr=$(python3 -c "import json; print(json.load(open('rules/current.json'))['version'])")
+          echo "prev=$prev curr=$curr"
+          if [ "$curr" -le "$prev" ]; then
+            echo "版本倒退：$curr <= $prev"
+            exit 1
+          fi
+
   build:
     needs: [fmt, test]
     runs-on: ubuntu-latest
