@@ -84,11 +84,9 @@ jobs:
       - name: 构建 gui 变体（WKWebView 需 cgo）
         run: go build -tags gui -trimpath -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o ghydra ./engine/cmd/ghydra
       - name: 打包（归档布局：根级 ghydra，selfupdate 白名单）
-        run: python3 -c "
-import zipfile
-z = zipfile.ZipFile('ghydra-darwin-arm64-gui.zip', 'w', zipfile.ZIP_DEFLATED)
-z.write('ghydra', 'ghydra')
-z.close()"
+        run: |
+          python3 -c "import zipfile; z = zipfile.ZipFile('ghydra-darwin-arm64-gui.zip', 'w', zipfile.ZIP_DEFLATED); z.write('ghydra', 'ghydra'); z.close()"
+          ls -la ghydra-darwin-arm64-gui.zip
       - uses: actions/upload-artifact@v4
         with:
           name: mac-gui
