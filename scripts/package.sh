@@ -84,7 +84,8 @@ for p in "$@"; do
     }
     # gui 变体：win CGO=0 纯 Go 可交叉；linux/darwin gui 需 CGO（CI 原生），
     # 本脚本仅负责 windows-amd64-gui（其余平台 gui 由 release.yml 原生 job 出）。
-    gobuild "$stage/$exe" go build -p 1 -tags gui -trimpath -ldflags="$(gldflags "$p")" -o "$stage/$exe" ./engine/cmd/ghydra
+    # F13：production 标签 = wails 真实发布运行时（无它 runtime 为 debug 变体）
+    gobuild "$stage/$exe" go build -p 1 -tags "gui production" -trimpath -ldflags="$(gldflags "$p")" -o "$stage/$exe" ./engine/cmd/ghydra
   else
     gobuild "$stage/$exe" go build -p 1 -trimpath -ldflags="$LDFLAGS" -o "$stage/$exe" ./engine/cmd/ghydra
   fi

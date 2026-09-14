@@ -11,11 +11,20 @@ export const DEFAULT_BASE = "http://127.0.0.1:9801";
 export function daemonBase(): string {
   const saved = localStorage.getItem(DAEMON_BASE_KEY);
   if (saved) return saved;
-  // 浏览器兜底模式：面板由 serve 托管 → daemon 天然同源
-  if (typeof location !== "undefined" && location.protocol.startsWith("http")) {
+  // 浏览器兜底模式：面板由 serve 托管 → daemon 天然同源。
+  // F13：wails 壳的 WebView2 origin 是 http://wails.localhost（http 但
+  // 非 daemon），必须排除，否则 API 全打到虚拟域 404（rc1 未连接根因之一）。
+  const isWailsHost =
+    typeof location !== "undefined" &&
+    (location.hostname === "wails.localhost" || location.hostname.endsWith(".localhost"));
+  if (
+    typeof location !== "undefined" &&
+    location.protocol.startsWith("http") &&
+    !isWailsHost
+  ) {
     return location.origin;
   }
-  return DEFAULT_BASE; // 壳模式（wails:// 等）：默认本机 daemon 端口
+  return DEFAULT_BASE; // 壳模式（wails:// / wails.localhost）：默认本机 daemon 端口
 }
 
 export function setDaemonBase(v: string) {
