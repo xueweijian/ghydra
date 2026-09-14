@@ -207,7 +207,7 @@ var publicKeyOverridePath string
 func SetPublicKeyOverride(path string) { publicKeyOverridePath = path }
 
 // PublicKeyErr 返回冻结公钥；解析失败时**返回 error 而非 panic**
-//（Apply 预检用：坏信任锚应让本次更新失败，而不是带走整个 daemon）。
+// （Apply 预检用：坏信任锚应让本次更新失败，而不是带走整个 daemon）。
 func PublicKeyErr() (ed25519.PublicKey, error) {
 	loadFrozenKey()
 	return frozenPub, frozenKeyErr
