@@ -102,6 +102,8 @@ func main() {
 		onCmd(os.Args[2:])
 	case "off":
 		offCmd(os.Args[2:])
+	case "config":
+		configCmd(os.Args[2:])
 	case "status":
 		statusCmd(os.Args[2:])
 	case "-h", "--help", "help":
@@ -125,6 +127,7 @@ func usage() {
   ghydra git enable|disable|status                   insteadOf 集成（fetch→CDN/push→直连）
   ghydra ssh enable|disable|status                   ssh config 443 写入（22 断 443 通时）
   ghydra status                                      last_good 持久化观察口
+  ghydra config set <key> <value> | get <key> | list  flags 持久化（P4/D6；重启 daemon 生效）
   ghydra version                                     版本（自更新自检契约）
   ghydra update [check|rollback] [--pre] [--allow-downgrade]  自更新（永不自毁）
   ghydra doctor [--mode direct|proxy|both]          六场景探针+直连对照+分类报告
@@ -235,6 +238,14 @@ func serveCmd(args []string) {
 		ensureReconcile(*dbPath)
 	}
 
+	// P4/D6：flags 合并——显式 CLI（flag.Visit） > 持久化 config 表 > 默认。
+	// store 打开提前到一切消费之前（后续 rulesState 复用同一连接）。
+	explicitFlags := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { explicitFlags[f.Name] = true })
+	persistedCfg, cfgStore := loadPersistedConfig(*dbPath)
+	applyPersistedFlags(explicitFlags, persistedCfg,
+		listen, cdn, rulesURL, rulesInterval, doctorInterval, *managed, log.Printf)
+
 	// M3-W2：规则三级地板（embedded → disk 验签 → remote 热更）。
 	// sel/PAC 每次现取快照（零锁热生效）；调度器种子池经 refresher
 	// OnApply 回调热重建（phase 3 推模型）。
@@ -250,15 +261,16 @@ func serveCmd(args []string) {
 
 	// phase 3：seen_max 持久化恢复先于一切远程拉取——回滚防线跨重启
 	// （R9：磁盘损坏回退 L0 后防线不回落）。
+	// P4/D6：store 由 loadPersistedConfig 提前打开，此处复用同一连接。
 	var ruleState rules.StateStore
 	var ruleDB *store.Store
-	if db, err := store.Open(*dbPath); err == nil {
-		ruleState = rulesStateAdapter{st: db}
-		ruleDB = db
+	if cfgStore != nil {
+		ruleState = rulesStateAdapter{st: cfgStore}
+		ruleDB = cfgStore
 		restoreSeenMax(provider, ruleState)
 		log.Printf("[rules] seen_max 锚点 = %d（embedded/disk/持久化 取大）", provider.SeenMax())
 	} else {
-		log.Printf("[rules] 状态库不可用（%v）：无持久化 seen_max/退避", err)
+		log.Printf("[rules] 状态库不可用：无持久化 seen_max/退避")
 	}
 
 	var sel proxy.UpstreamSelector = proxy.SelectorFunc(func(host string) (string, bool) {
@@ -401,7 +413,9 @@ func serveCmd(args []string) {
 			Listen: actualAddr, Scheduler: *schedOn, CDN: cdnFn(),
 			DoctorEveryS: int64(*doctorInterval / time.Second),
 			DoctorRepo:   *doctorRepo, Managed: *managed,
-			GUIDist: guiDirOrDefault(*guiDist),
+			GUIDist:        guiDirOrDefault(*guiDist),
+			RulesURL:       *rulesURL,
+			RulesIntervalS: int64(*rulesInterval / time.Second),
 		}
 	}
 	apiSrv = api.New(api.Deps{
@@ -436,13 +450,68 @@ func serveCmd(args []string) {
 			return st
 		},
 		ConfigGet: buildConfig,
-		ConfigSet: func(p api.ConfigPatch) (api.ApiConfig, error) {
-			if p.CDN == nil {
-				return api.ApiConfig{}, api.UserError("无可热更字段（仅 cdn）")
+		ConfigSet: func(p api.ConfigPatch) (api.ConfigSetResp, error) {
+			if p.CDN == nil && p.RulesURL == nil && p.RulesIntervalS == nil &&
+				p.Listen == nil && p.DoctorEveryS == nil {
+				return api.ConfigSetResp{}, api.UserError("无可写字段（cdn/rules_url/rules_interval_s/listen/doctor_every_s）")
 			}
-			*cdn = *p.CDN // 热更：plain HTTP/doctor/get/status 全走 cdnFn
-			log.Printf("[api] cdn 热更 → %q", *p.CDN)
-			return buildConfig(), nil
+			var requires []string
+			if p.Listen != nil {
+				if !validLoopbackListen(*p.Listen) {
+					return api.ConfigSetResp{}, api.UserError("listen 必须形如 127.0.0.1:端口（仅 IPv4 回环）")
+				}
+				requires = append(requires, "listen")
+			}
+			if p.RulesURL != nil && *p.RulesURL != "" && !validHTTPURL(*p.RulesURL) {
+				return api.ConfigSetResp{}, api.UserError("rules_url 必须是 http(s) 绝对 URL")
+			}
+			if p.RulesIntervalS != nil && *p.RulesIntervalS <= 0 {
+				return api.ConfigSetResp{}, api.UserError("rules_interval_s 必须为正秒数")
+			}
+			if p.DoctorEveryS != nil && *p.DoctorEveryS < 0 {
+				return api.ConfigSetResp{}, api.UserError("doctor_every_s 不能为负")
+			}
+			// 持久化（store 可用时；不可用 = --db 空，保守拒绝写请求防「保存了却没存」幻觉）
+			if cfgStore == nil {
+				if p.RulesURL != nil || p.RulesIntervalS != nil || p.Listen != nil || p.DoctorEveryS != nil {
+					return api.ConfigSetResp{}, api.UserError("无持久化存储（--db 空），仅 cdn 可热更")
+				}
+			} else {
+				setc := func(k, v string) {
+					if err := cfgStore.ConfigSet(k, v); err != nil {
+						log.Printf("[config] 持久化 %s 失败: %v", k, err)
+					}
+				}
+				if p.Listen != nil {
+					setc("listen", *p.Listen)
+				}
+				if p.RulesURL != nil {
+					setc("rules_url", *p.RulesURL)
+				}
+				if p.RulesIntervalS != nil {
+					setc("rules_interval", (time.Duration(*p.RulesIntervalS) * time.Second).String())
+				}
+				if p.DoctorEveryS != nil {
+					setc("doctor_interval", (time.Duration(*p.DoctorEveryS) * time.Second).String())
+				}
+			}
+			if p.RulesURL != nil {
+				requires = append(requires, "rules_url")
+			}
+			if p.RulesIntervalS != nil {
+				requires = append(requires, "rules_interval")
+			}
+			if p.DoctorEveryS != nil {
+				requires = append(requires, "doctor_interval")
+			}
+			if p.CDN != nil {
+				*cdn = *p.CDN // 热更：plain HTTP/doctor/get/status 全走 cdnFn
+				log.Printf("[api] cdn 热更 → %q", *p.CDN)
+			}
+			if len(requires) > 0 {
+				log.Printf("[api] 配置已持久化（重启生效）: %v", requires)
+			}
+			return api.ConfigSetResp{ApiConfig: buildConfig(), RequiresRestart: requires}, nil
 		},
 		SystemOn: func(mode string) (api.OnResp, error) {
 			if err := applyTakeover(*dbPath, mode, portOf(actualAddr)); err != nil {

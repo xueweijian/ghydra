@@ -91,21 +91,22 @@ func (c daemonControlProd) Stop() error {
 }
 
 func (c daemonControlProd) Start() error {
-	d := loadDaemonState()
-	port := 9801
-	if d != nil && d.Port != 0 {
-		port = d.Port
-	}
 	self, err := c.exePathForSpawn()
 	if err != nil {
 		return err
 	}
-	log.Printf("[selfupdate] 起 daemon: exe=%s port=%d", self, port)
-	pid, err := spawnServeAt(self, port, c.dbPath)
+	// P4/D6：不传端口——serve 端合并逻辑解析持久化 listen（回归持久化
+	// 端口而非旧 serve.json 的迁移暂态）；WaitVersion 轮询走 serve.json
+	// 运行态真相，端口漂移自洽。
+	log.Printf("[selfupdate] 起 daemon: exe=%s", self)
+	pid, err := spawnServeAt(self, c.dbPath)
 	if err != nil {
 		return err
 	}
-	return saveDaemonState(daemonState{PID: pid, Port: port, StartedAt: time.Now().Unix()})
+	// serve.json 由新 serve 自写（bind 后，端口运行态真相）——此处不写
+	// 防止旧端口假数据误导 WaitVersion（它每轮重读，能容忍短暂缺失）。
+	log.Printf("[selfupdate] daemon pid=%d（serve.json 由新进程落盘）", pid)
+	return nil
 }
 
 // WaitVersion 轮询 /api/status 直到 version == want（token 走本机文件）。

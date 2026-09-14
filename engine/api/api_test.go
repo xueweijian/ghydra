@@ -73,6 +73,8 @@ func fixedConfig() ApiConfig {
 	return ApiConfig{
 		Listen: "127.0.0.1:9801", Scheduler: true, CDN: "https://gh.1ciyuan.cn/",
 		DoctorEveryS: 3600, DoctorRepo: "xueweijian/ghydra", Managed: true,
+		RulesURL:       "https://raw.githubusercontent.com/xueweijian/ghydra/main/rules/current.json",
+		RulesIntervalS: 21600,
 	}
 }
 
@@ -97,16 +99,33 @@ func testDeps(st *depState) Deps {
 			return "refresh-20260913-120000", nil
 		},
 		ConfigGet: func() ApiConfig { return fixedConfig() },
-		ConfigSet: func(p ConfigPatch) (ApiConfig, error) {
+		ConfigSet: func(p ConfigPatch) (ConfigSetResp, error) {
 			if st.busy {
-				return ApiConfig{}, ErrBusy
+				return ConfigSetResp{}, ErrBusy
 			}
 			cfg := fixedConfig()
+			var requires []string
 			if p.CDN != nil {
 				cfg.CDN = *p.CDN
 			}
+			if p.Listen != nil {
+				cfg.Listen = *p.Listen
+				requires = append(requires, "listen")
+			}
+			if p.RulesURL != nil {
+				cfg.RulesURL = *p.RulesURL
+				requires = append(requires, "rules_url")
+			}
+			if p.RulesIntervalS != nil {
+				cfg.RulesIntervalS = *p.RulesIntervalS
+				requires = append(requires, "rules_interval")
+			}
+			if p.DoctorEveryS != nil {
+				cfg.DoctorEveryS = *p.DoctorEveryS
+				requires = append(requires, "doctor_interval")
+			}
 			st.lastCDN = p.CDN
-			return cfg, nil
+			return ConfigSetResp{ApiConfig: cfg, RequiresRestart: requires}, nil
 		},
 		DoctorRun: func(repo string) (string, error) {
 			if st.busy {
@@ -361,9 +380,17 @@ func TestConfigEndpoints(t *testing.T) {
 	if _, b := call(t, "POST", ts.URL+"/api/config", map[string]any{"cdn": nil}, authHdr()); strings.Contains(b, `"cdn":""`) {
 		t.Errorf("cdn null must be no-op: %s", b)
 	}
-	// 未知字段拒绝
-	if resp, _ := call(t, "POST", ts.URL+"/api/config", map[string]any{"listen": "0.0.0.0:1"}, authHdr()); resp.StatusCode != 400 {
+	// 未知字段拒绝（P4 后 listen 是合法 patch 字段，换真未知字段名）
+	if resp, _ := call(t, "POST", ts.URL+"/api/config", map[string]any{"bogus": 1}, authHdr()); resp.StatusCode != 400 {
 		t.Errorf("unknown field must 400, got %d", resp.StatusCode)
+	}
+	// P4/D6：持久化字段 patch → 200 + requires_restart 列出（fake Deps）
+	resp2, b2 := call(t, "POST", ts.URL+"/api/config",
+		map[string]any{"listen": "127.0.0.1:9900", "rules_interval_s": int64(3600)}, authHdr())
+	if resp2.StatusCode != 200 {
+		t.Errorf("persisted patch: %d %s", resp2.StatusCode, b2)
+	} else if !strings.Contains(b2, `"requires_restart"`) || !strings.Contains(b2, "listen") {
+		t.Errorf("requires_restart missing: %s", b2)
 	}
 	// 坏 JSON
 	if resp, _ := call(t, "POST", ts.URL+"/api/config", json.RawMessage(`{bad`), authHdr()); resp.StatusCode != 400 {

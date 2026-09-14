@@ -100,21 +100,35 @@ type ChannelSnapshot struct {
 
 // ---- GET/POST /api/config ----
 
-// ApiConfig 运行配置快照。Hot 标注可 POST 热更的字段（当前仅 cdn）。
+// ApiConfig 运行配置快照。CDN 标注可 POST 热更；其余字段写入持久化
+// config 表（P4/D6），重启 daemon 生效（响应 requires_restart 列出）。
 type ApiConfig struct {
-	Listen       string `json:"listen"`
-	Scheduler    bool   `json:"scheduler"`
-	CDN          string `json:"cdn"`            // hot：POST /api/config 可改
-	DoctorEveryS int64  `json:"doctor_every_s"` // 0 = 自动 doctor 关
-	DoctorRepo   string `json:"doctor_repo"`
-	Managed      bool   `json:"managed"`
-	GUIDist      string `json:"gui_dist,omitempty"`
+	Listen         string `json:"listen"`
+	Scheduler      bool   `json:"scheduler"`
+	CDN            string `json:"cdn"` // hot：POST /api/config 热更
+	DoctorEveryS   int64  `json:"doctor_every_s"`
+	DoctorRepo     string `json:"doctor_repo"`
+	Managed        bool   `json:"managed"`
+	GUIDist        string `json:"gui_dist,omitempty"`
+	RulesURL       string `json:"rules_url"`        // P4/D6 持久化（重启生效）
+	RulesIntervalS int64  `json:"rules_interval_s"` // P4/D6 持久化（重启生效）
+}
+
+// ConfigSetResp POST /api/config 响应：新配置快照 + 需重启生效的字段集
+// （requires_restart 空 = 全部已热更）。
+type ConfigSetResp struct {
+	ApiConfig
+	RequiresRestart []string `json:"requires_restart,omitempty"`
 }
 
 // ConfigPatch POST /api/config 请求体。指针区分「未提供」与「置空」
-// （cdn 置空 = 关 B 通道切道）。
+// （cdn 置空 = 关 B 通道切道）。全部 nil = 400 无可写字段。
 type ConfigPatch struct {
-	CDN *string `json:"cdn"`
+	CDN            *string `json:"cdn"`
+	RulesURL       *string `json:"rules_url"`        // P4/D6：持久化，重启生效
+	RulesIntervalS *int64  `json:"rules_interval_s"` // P4/D6：秒；持久化，重启生效
+	Listen         *string `json:"listen"`           // P4/D6：127.0.0.1:port；持久化，重启生效
+	DoctorEveryS   *int64  `json:"doctor_every_s"`   // P4/D6：秒（0=关）；持久化，重启生效
 }
 
 // ---- POST /api/on | /api/off ----

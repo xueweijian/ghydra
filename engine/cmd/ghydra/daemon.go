@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/xueweijian/ghydra/engine/gitcfg"
@@ -135,19 +136,25 @@ func ensureReconcile(dbPath string) {
 	}
 }
 
-// spawnServe 后台拉起 serve（脱离终端会话）。
-func spawnServe(port int, dbPath string) (int, error) {
+// spawnServe 后台拉起 serve（脱离终端会话）。端口由 serve 端合并逻辑
+// 解析（持久化 listen > 默认 9801，冲突内部迁移）——调用方不传。
+func spawnServe(dbPath string) (int, error) {
 	self, err := os.Executable()
 	if err != nil {
 		return 0, err
 	}
-	return spawnServeAt(self, port, dbPath)
+	return spawnServeAt(self, dbPath)
 }
 
 // spawnServeAt 用显式 exe 路径拉起托管 serve（自更新后必须传交换前捕获的
 // 路径，见 daemonControlProd 注释）。
-func spawnServeAt(self string, port int, dbPath string) (int, error) {
-	args := []string{"serve", "--listen", fmt.Sprintf("127.0.0.1:%d", port), "--doctor-interval", "1h"}
+//
+// P4/D6：不再传 --listen/--doctor-interval——这两个是管理面参数，伪装成
+// 用户显式 flag 会压制持久化 config（GUI 配置活不过重启）。listen 由
+// serve 端合并逻辑解析（持久化 > 默认 9801，端口冲突 serve 内部迁移）；
+// managed 模式 doctor 默认 1h（configglue.managedDoctorInterval）。
+func spawnServeAt(self string, dbPath string) (int, error) {
+	args := []string{"serve", "--managed"}
 	if dbPath != "" {
 		args = append(args, "--db", dbPath)
 	}
@@ -202,19 +209,36 @@ func onCmd(args []string) {
 		log.Fatalf("serve 已在运行（端口 %d）。先执行 ghydra off", d.Port)
 	}
 
-	// 端口迁移探测（serve 实际监听时再次 fallback，这里提前选定）
-	chosen := *port
+	// 端口迁移探测（serve 实际监听时再次 fallback，这里提前选定）。
+	// P4/D6：探测起点 = 显式 --port > 持久化 listen 端口 > 9801——
+	// serve 端合并逻辑同源（configglue），两边独立收敛一致。
+	portExplicit := false
+	fs.Visit(func(f *flag.Flag) { portExplicit = f.Name == "port" })
+	base := *port
+	if !portExplicit {
+		if db, err := store.Open(*dbPath); err == nil {
+			if v, ok, _ := db.ConfigGet("listen"); ok && validLoopbackListen(v) {
+				if _, ps, err := net.SplitHostPort(v); err == nil {
+					if n, e2 := strconv.Atoi(ps); e2 == nil && n > 0 {
+						base = n
+					}
+				}
+			}
+			_ = db.Close()
+		}
+	}
+	chosen := base
 	for i := 0; i < 9; i++ {
 		if !serveAlive(chosen) {
 			break
 		}
 		chosen++
 	}
-	if chosen != *port {
-		log.Printf("端口 %d 被占，迁移到 %d", *port, chosen)
+	if chosen != base {
+		log.Printf("端口 %d 被占，迁移到 %d", base, chosen)
 	}
 
-	pid, err := spawnServe(chosen, *dbPath)
+	pid, err := spawnServe(*dbPath)
 	if err != nil {
 		log.Fatalf("拉起 serve 失败: %v", err)
 	}

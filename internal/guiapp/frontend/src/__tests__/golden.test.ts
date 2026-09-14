@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest";
 import type {
   ApiStatus,
   ApiConfig,
+  ConfigSetResp,
   RulesSnapshot,
   DoctorSummaryResp,
   DoctorRunResp,
@@ -61,6 +62,14 @@ describe("golden ↔ types.ts 契约锁定", () => {
     const c: ApiConfig = goldenConfig as ApiConfig;
     expect(typeof c.cdn).toBe("string");
     expect(c.doctor_every_s).toBeGreaterThan(0);
+    // P4/D6：持久化字段进契约
+    expect(typeof c.rules_url).toBe("string");
+    expect(c.rules_interval_s).toBeGreaterThan(0);
+  });
+
+  it("ConfigSetResp.requires_restart 类型成立", () => {
+    const r: ConfigSetResp = { ...goldenConfig, requires_restart: ["listen"] } as ConfigSetResp;
+    expect(r.requires_restart).toContain("listen");
   });
 
   it("doctor_summary.json 满足 DoctorSummaryResp", () => {

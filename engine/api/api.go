@@ -35,10 +35,10 @@ func (e UserError) Error() string { return string(e) }
 // Deps 装配面：全部可选字段在 New 时校验必填项。
 type Deps struct {
 	// 必填
-	Status    func() ApiStatus                           // GET /api/status + SSE status 帧
-	ConfigGet func() ApiConfig                           // GET /api/config
-	ConfigSet func(patch ConfigPatch) (ApiConfig, error) // POST（仅 cdn 热更）
-	DoctorRun func(repo string) (string, error)          // 异步触发；返回 runID；忙 = ErrBusy
+	Status    func() ApiStatus                               // GET /api/status + SSE status 帧
+	ConfigGet func() ApiConfig                               // GET /api/config
+	ConfigSet func(patch ConfigPatch) (ConfigSetResp, error) // POST（cdn 热更 + 持久化字段，P4/D6）
+	DoctorRun func(repo string) (string, error)              // 异步触发；返回 runID；忙 = ErrBusy
 
 	// 可选（nil → 端点 503 "not assembled"）
 	Rules         func() RulesSnapshot   // GET /api/rules

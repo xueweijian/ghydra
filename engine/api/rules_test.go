@@ -76,7 +76,9 @@ func TestRulesNotAssembled(t *testing.T) {
 	srv := New(Deps{
 		Status:    fixedStatus,
 		ConfigGet: func() ApiConfig { return fixedConfig() },
-		ConfigSet: func(ConfigPatch) (ApiConfig, error) { return fixedConfig(), nil },
+		ConfigSet: func(ConfigPatch) (ConfigSetResp, error) {
+			return ConfigSetResp{ApiConfig: fixedConfig()}, nil
+		},
 		DoctorRun: func(string) (string, error) { return "run", nil },
 	}, testToken)
 	ts := newBareServer(t, srv)

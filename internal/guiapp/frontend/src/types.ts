@@ -103,6 +103,22 @@ export interface ApiConfig {
   doctor_repo: string;
   managed: boolean;
   gui_dist?: string;
+  rules_url: string; // P4/D6 持久化（重启生效）
+  rules_interval_s: number; // P4/D6 持久化（重启生效）
+}
+
+/** POST /api/config 响应：ApiConfig + 需重启生效的字段集。 */
+export interface ConfigSetResp extends ApiConfig {
+  requires_restart?: string[];
+}
+
+/** POST /api/config 请求体（指针语义：null/缺省 = 不改）。 */
+export interface ConfigPatch {
+  cdn?: string | null;
+  rules_url?: string | null;
+  rules_interval_s?: number | null;
+  listen?: string | null;
+  doctor_every_s?: number | null;
 }
 
 export interface DoctorSummaryRow {
