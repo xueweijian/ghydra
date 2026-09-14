@@ -88,6 +88,8 @@ func main() {
 		sshCmd(os.Args[2:])
 	case "serve":
 		serveCmd(os.Args[2:])
+	case "gui":
+		os.Exit(guiMain())
 	case "token":
 		tokenCmd(os.Args[2:])
 	case "version":
@@ -116,6 +118,7 @@ func usage() {
   ghydra on [--port N] [--mode pac|proxy]             接管系统代理 + 后台拉起 serve
   ghydra off                                          恢复系统代理 + 停止 serve
   ghydra serve [--listen ADDR] [--scheduler on|off] [--cdn URL]   前台运行（调试用）
+  ghydra gui                                          桌面面板（-tags gui 构建才内置）
   ghydra get <url> [-o 文件] [--cdn URL] [--json] [--stats]  下载器（A 择优/B 续传切道）
   ghydra git enable|disable|status                   insteadOf 集成（fetch→CDN/push→直连）
   ghydra ssh enable|disable|status                   ssh config 443 写入（22 断 443 通时）

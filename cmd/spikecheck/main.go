@@ -1,4 +1,8 @@
+//go:build gui
+
 // spikecheck —— M3-W0 的 CI 可执行验证（linux + xvfb 下运行）。
+// //go:build gui：与 guiapp 同一编译边界（W4p2 P1）——默认构建零 wails
+// 依赖；CI 用 -tags "gui gtk3" 构建（linux 桌面后端选 webkit2gtk-4.1）。
 //
 // 验证项（三件套中 CI 可机检的部分）：
 //  1. wails v3 应用栈能真实启动（gtk/webkit 运行时完整）
@@ -11,22 +15,23 @@
 package main
 
 import (
-	_ "embed"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"github.com/xueweijian/ghydra/internal/guiapp"
 )
 
-//go:embed assets/icon.png
-var iconPNG []byte
+// iconPNG 经 guiapp.IconPNG 单一事实源引用（P1 并轨：消除从未入库的
+// 副本 assets/icon.png——CI checkout 后该副本不存在，embed 会挂）。
 
 func main() {
 	app := application.New(application.Options{
 		Name:        "ghydra-spikecheck",
 		Description: "CI smoke for wails v3 stack",
-		Icon:        iconPNG,
+		Icon:        guiapp.IconPNG,
 		Assets:      application.AlphaAssets,
 	})
 
@@ -39,7 +44,7 @@ func main() {
 	})
 
 	tray := app.SystemTray.New()
-	tray.SetIcon(iconPNG)
+	tray.SetIcon(guiapp.IconPNG)
 	tray.SetTooltip("ghydra spikecheck")
 
 	trayMenu := app.NewMenu()

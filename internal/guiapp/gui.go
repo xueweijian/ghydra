@@ -1,14 +1,22 @@
-// GHydra GUI 壳（M3-W0 spike）—— Wails v3（beta.20 锁定）+ SolidJS 薄客户端。
+//go:build gui
+
+// Package guiapp —— GHydra GUI 壳（M3-W0 spike 转正，W4p2 P1 并轨主 module）。
+// Wails v3（beta.20 锁定）+ SolidJS 薄客户端。
 //
 // 架构铁律（PRD/TechReference M10）：GUI 不含任何加速逻辑，只是
 // 常驻 daemon（ghydra serve）的控制器/观察窗，经 127.0.0.1 HTTP
 // 通信。壳与浏览器（syncthing 兜底模式）共用同一份前端 dist。
 //
-// 本 spike 验证三件套的 v3 原生实现：
+// 编译边界（W4p2 设计 D1）：本文件仅 -tags gui 时编译——默认构建
+// 零 wails 依赖；无 tag 构建下 `ghydra gui` 走 gui_off.go 降级引导。
+// Windows 构建 CGO_ENABLED=0（go-webview2 纯 Go）；Linux v1.0 CLI-only
+// （GTK 需 CGO，gui 变体不进 Linux 发布矩阵）。
+//
+// 已验证的 v3 原生三件套：
 //   - 托盘常驻：SystemTray（进程内，AttachWindow 点击唤起/隐藏窗口）
 //   - 开机自启：AutostartManager（win Run 键 / macOS LaunchAgent / XDG autostart）
 //   - 单实例唤醒：SingleInstance（二次启动 → 首实例回调 → 显示窗口）
-package main
+package guiapp
 
 import (
 	"embed"
@@ -19,13 +27,11 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
-//go:embed assets/icon.png
-var iconPNG []byte
-
 //go:embed all:frontend/dist
 var distFS embed.FS
 
-func main() {
+// Run 启动 GUI 壳（阻塞直至退出；致命错误 log.Fatal 非零退出）。
+func Run() {
 	distSub, err := fs.Sub(distFS, "frontend/dist")
 	if err != nil {
 		log.Fatalf("前端资源挂载失败: %v", err)
@@ -35,7 +41,7 @@ func main() {
 	app = application.New(application.Options{
 		Name:        "GHydra",
 		Description: "GitHub 全链路加速器",
-		Icon:        iconPNG,
+		Icon:        IconPNG,
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(distSub),
 		},
@@ -68,7 +74,7 @@ func main() {
 	})
 
 	tray := app.SystemTray.New()
-	tray.SetIcon(iconPNG)
+	tray.SetIcon(IconPNG)
 	tray.SetTooltip("GHydra — GitHub 加速器")
 
 	trayMenu := app.NewMenu()

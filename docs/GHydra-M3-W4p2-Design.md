@@ -127,6 +127,23 @@ push tag v* → build(3平台×产物, ldflags) → NSIS(linux交叉免,win原�
 ## 3. Phase 分解（串行，每 Phase 退出才进下一个）
 
 ### P1 GUI 并轨（D1+D2）
+
+> **实施记录（2026-09-14，本地全绿后 push）**：
+> - 搬迁：`gui/` 独立 module 消灭——main.go→`internal/guiapp/gui.go`（`//go:build gui`，`func Run()`）、
+>   assets/frontend 随迁、spikecheck→`cmd/spikecheck`（同样 `//go:build gui`）；icon 单一事实源化
+>   `internal/guiapp/icon.go`（**修复潜伏 bug：spikecheck 的 assets/icon.png 从未入库**，CI checkout 后
+>   embed 必挂——被 paths filter 掩盖至今）。
+> - `ghydra gui`：`gui_on.go`（tag gui→guiapp.Run）/`gui_off.go`（!gui→引导+退出码 2，表驱动测试）。
+> - **go.mod go 1.25.0 + `toolchain go1.25.0` 锁定**：wails beta.20 硬性要求 go≥1.25.0；
+>   **go1.26.8 runtime 在 PRoot/Android 沙箱必现 Segmentation fault（rc=139），go1.25.0 间歇性**——
+>   GOTOOLCHAIN=auto 会挑最新版，必须 toolchain 指令锁 1.25；本地所有 go 命令套 rc=139 重试包装
+>   （最高实测 7 次重试通过）。CI setup-go "1.25" 全部对齐。
+> - MVS 连锁升级：sqlite v1.34.5→v1.44.3、x/crypto→v0.53.0、x/sys→v0.46.0（wails 依赖图抬轿）——
+>   全量测试通过确认无行为回归。
+> - golden 测试 import 4 级→**5 级**（目录深一层），12 处；vitest 23/23 + tsc + vite build 本地绿。
+> - **Windows gui 变体 CGO=0 交叉编译实证通过：23.3MB 单二进制**（dist/.gitkeep stub 使无 npm 产物
+>   也可编译；CI ci.yml windows 目标加 gui 变体冒烟 + linux 产物 ldflags `-X main.Version` 注入验证）。
+
 - gui module 并回主 module；`engine/gui/` + build tag；`ghydra gui` 子命令（无 tag 桩 + 有 tag 真身）；scripts/build.sh 统一 ldflags；CI：win `-tags gui` CGO=0 构建 + spikecheck 冒烟进主 ci.yml。
 - **退出**：win/mac `-tags gui` 构建绿 + 冒烟绿 + `ghydra version` 三变量注入断言 + 无 tag 构建的桩提示断言。
 

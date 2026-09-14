@@ -19,18 +19,18 @@ import type {
   HelloFrame,
 } from "../types";
 
-import goldenStatus from "../../../../engine/api/testdata/golden/status.json";
-import goldenConfig from "../../../../engine/api/testdata/golden/config.json";
-import goldenDoctorSummary from "../../../../engine/api/testdata/golden/doctor_summary.json";
-import goldenDoctorRun from "../../../../engine/api/testdata/golden/doctor_run.json";
-import goldenGetProgress from "../../../../engine/api/testdata/golden/get_progress.json";
-import goldenGetStart from "../../../../engine/api/testdata/golden/get_start.json";
-import goldenMitm from "../../../../engine/api/testdata/golden/mitm_status.json";
-import goldenConn from "../../../../engine/api/testdata/golden/sse_conn.json";
-import goldenDoctorFrame from "../../../../engine/api/testdata/golden/sse_doctor.json";
-import goldenGetFrame from "../../../../engine/api/testdata/golden/sse_get.json";
-import goldenHello from "../../../../engine/api/testdata/golden/sse_hello.json";
-import goldenRules from "../../../../engine/api/testdata/golden/rules_snapshot.json";
+import goldenStatus from "../../../../../engine/api/testdata/golden/status.json";
+import goldenConfig from "../../../../../engine/api/testdata/golden/config.json";
+import goldenDoctorSummary from "../../../../../engine/api/testdata/golden/doctor_summary.json";
+import goldenDoctorRun from "../../../../../engine/api/testdata/golden/doctor_run.json";
+import goldenGetProgress from "../../../../../engine/api/testdata/golden/get_progress.json";
+import goldenGetStart from "../../../../../engine/api/testdata/golden/get_start.json";
+import goldenMitm from "../../../../../engine/api/testdata/golden/mitm_status.json";
+import goldenConn from "../../../../../engine/api/testdata/golden/sse_conn.json";
+import goldenDoctorFrame from "../../../../../engine/api/testdata/golden/sse_doctor.json";
+import goldenGetFrame from "../../../../../engine/api/testdata/golden/sse_get.json";
+import goldenHello from "../../../../../engine/api/testdata/golden/sse_hello.json";
+import goldenRules from "../../../../../engine/api/testdata/golden/rules_snapshot.json";
 
 describe("golden ↔ types.ts 契约锁定", () => {
   it("status.json 满足 ApiStatus", () => {

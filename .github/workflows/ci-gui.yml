@@ -1,13 +1,15 @@
 name: ci-gui
 
 # M3 GUI 线独立流水线（引擎线在 ci.yml）。
-# 触发面：gui/** 与本文件；PR 仅同 paths。
+# W4p2 P1 并轨后：壳 = 主 module 的 internal/guiapp（-tags gui），
+# 前端源码 internal/guiapp/frontend，spikecheck cmd/spikecheck。
+# 触发面：GUI 相关路径与本文件；PR 仅同 paths。
 on:
   push:
     branches: [main]
-    paths: ["gui/**", ".github/workflows/ci-gui.yml"]
+    paths: ["internal/guiapp/**", "cmd/spikecheck/**", ".github/workflows/ci-gui.yml"]
   pull_request:
-    paths: ["gui/**", ".github/workflows/ci-gui.yml"]
+    paths: ["internal/guiapp/**", "cmd/spikecheck/**", ".github/workflows/ci-gui.yml"]
 
 env:
   WAILS_VERSION: v3.0.0-beta.20 # 升级必须三平台全绿（DevWorkflow §6 纪律）
@@ -22,9 +24,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: gui/frontend/package-lock.json
+          cache-dependency-path: internal/guiapp/frontend/package-lock.json
       - name: npm ci + build + golden 契约测试
-        working-directory: gui/frontend
+        working-directory: internal/guiapp/frontend
         run: |
           npm ci
           npm run build
@@ -33,7 +35,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
-          path: gui/frontend/dist/
+          path: internal/guiapp/frontend/dist/
           retention-days: 7
 
   desktop:
@@ -53,14 +55,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       CGO_ENABLED: ${{ matrix.cgo }}
-    defaults:
-      run:
-        working-directory: gui
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25" # wails v3 要求 go >= 1.25
+          go-version: "1.25" # wails v3 要求 go >= 1.25（与根 go.mod 一致）
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -73,23 +72,26 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontend-dist
-          path: gui/frontend/dist
-      - name: go vet（gui 模块）
+          path: internal/guiapp/frontend/dist
+      - name: go vet（gui tag 编译域）
         # linux 用 gtk3 后端（webkit2gtk-4.1，22.04+ 兼容）；默认后端是
         # gtk4/webkitgtk-6.0（仅 24.04+ 有）。windows/mac 忽略该 tag。
-        run: go vet -tags "gtk3" ./...
-      - name: go build（壳）
-        run: go build -tags "gtk3" -trimpath -ldflags="-s -w" -o dist/ghydra-gui${{ matrix.os == 'windows-2022' && '.exe' || '' }} .
+        # gui tag：internal/guiapp/gui.go 与 cmd/spikecheck 的编译边界（D1）。
+        run: go vet -tags "gui gtk3" ./...
+      - name: go build（主二进制 gui 变体——单二进制，D1）
+        run: |
+          mkdir -p dist
+          go build -tags "gui gtk3" -trimpath -ldflags="-s -w" -o dist/ghydra-gui${{ matrix.os == 'windows-2022' && '.exe' || '' }} ./engine/cmd/ghydra
       - name: go build（spikecheck）
-        run: go build -tags "gtk3" -o dist/ ./spikecheck
+        run: go build -tags "gui gtk3" -o dist/ ./cmd/spikecheck
       - name: xvfb 冒烟（linux：栈启动/窗口/托盘/autostart 往返）
         if: runner.os == 'Linux'
         run: xvfb-run -a timeout 90 ./dist/spikecheck
       - name: 记录壳体积
-        run: ls dist/
+        run: ls -la dist/
       - name: 上传壳产物
         uses: actions/upload-artifact@v4
         with:
           name: ghydra-gui-${{ matrix.os }}
-          path: gui/dist/
+          path: dist/
           retention-days: 14
