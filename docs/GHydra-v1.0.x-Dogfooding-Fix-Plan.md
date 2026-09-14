@@ -18,6 +18,7 @@
 | web 场景 200/2.1KB/s 记 FAIL；bench 默认 bootstrap 太弱；status 无 conns；raw 域池单 IP；bench 不记 dst_ip；last_good 复用无衰减 | 可观测性/分级缺口 | F5–F10 |
 | gui 产物未嵌前端，真机窗口空白（补充排查 22:20–22:45，Windows/macOS 双平台）；下载包经 SHA256/字节核对无误 | **发布流水线漏前端构建（P0 分发阻断级）** | F11 |
 | GUI supervisor 拉起的 serve 在 `ghydra off` 后仍存活，需手动清理 | 生命周期缺口：off 清理面不覆盖壳拉起的守护 | F12 |
+| rc1 演练：面板渲染正常但恒显「daemon 未连接」，`[inject]` 日志零出现 | WindowRuntimeReady 钩子疑未触发，token 注入链断（P1） | F13 |
 
 不变量（不修）：on/off 注册表逐字段还原 4/4、零残留、SHA256 链、自更新链、doctor proxy_unreachable 语义。
 
@@ -163,6 +164,8 @@ ERR [AssetFileServerFS] Unable to handle request url=/ err=no `index.html` could
 - CI：rc tag 演练 release 全链，断言 8 产物数量红线不变 + gui 产物体积显著大于空壳基线（17,203,200 B → 应 +前端 dist 体积）；
 - 真机：安装/解包 CI 产物跑 `ghydra gui`，确认面板渲染（六页面 + SSE 接线）。
 
+**实施状态（2026-09-15）**：已合入 main（PR #1，CI 21/21 绿）；`v1.0.1-rc1` 全链演练通过——产物 +50,176 B 前端、二进制含 vite 资产、真机面板渲染、零 `ERR no index.html`。证据：[evidence/2026-09-15-v1.0.1-rc1-release-rehearsal.md](evidence/2026-09-15-v1.0.1-rc1-release-rehearsal.md)。
+
 **后续项（排 v1.1.0，本次不做）**：serve 浏览器兜底模式（exe 旁 `dist/`）在 NSIS 单文件安装下同样无面板——改为 gui 变体构建时 serve 静态托管优先读 embed FS；`gui/` 遗留独立 module（go.mod + 孤儿 icon.png）清理。
 
 ## F12（P1.5）`ghydra off` 不杀 supervisor 拉起的 serve
@@ -171,13 +174,26 @@ ERR [AssetFileServerFS] Unable to handle request url=/ err=no `index.html` could
 
 **定性**：生命周期缺口——off 的清理面只覆盖「自己拉起的 serve」，不识别「GUI 壳拉起的 serve」场景。**详细设计留 v1.0.2 规划补齐**，关键约束：off 语义必须与 supervisor.Decide 的「非启动期死亡且无 pending 绝不复活」off 保护自洽——off 清掉壳拉起的 serve 后，壳不得把它复活；识别面走 serve.json（pid/port 运行态真相）而非进程名扫描。
 
+## F13（P1）GUI webview 连接注入链断：WindowRuntimeReady 疑未触发
+
+**问题**（v1.0.1-rc1 演练发现，2026-09-15）：F11 修复后面板完整渲染，但恒显「daemon 未连接 / 读取中」；daemon 本身健康（serve.json 正常、9801 监听、/status 正常、conns=7）。
+
+**证据与根因假设**：`connInjector` 的注入门是 `events.Common.WindowRuntimeReady`（gui.go:160）；supervisor 每 2s tick 经 OnState(running) 调 `inject()`，但 `ready=false` 时只挂 pending。gui.log 全程**零 `[inject] 已注入` 行** → 唯一自洽解释：**该钩子在 Windows/WebView2（wails v3.0.0-beta.20）上从未触发**，`onReady` 不被调，token/daemonBase 永不注入，前端拿不到凭据连不上 daemon。v1.0.0 白屏时代此链路不可观测；CI 只编译不跑 GUI（ci-gui 无 Windows 运行时用例）、spikecheck 仅 Linux——测试盲区。
+
+**修复方向（v1.0.1 实施时定稿）**：
+1. 事件排查：核对 beta.20 Windows 事件名/语义（`WindowRuntimeReady` vs `Wails.WindowReady` 等近似名），必要时多钩子冗余 + 首个到达者置 ready；
+2. 兜底定时补注：inject() 每 tick 都试（现已是），加「ready 后 N 秒内仍未注入则降级直接 ExecJS」或轮询 `win.ExecJS` 探测 localStorage 已生效；
+3. 测试补盲：ci-gui 加 Windows spikecheck 型冒烟（无头断言注入日志出现），进 P5 真机走查清单。
+
+**验收**：真机 `ghydra gui` 启动 ≤5s 内 gui.log 出现 `[inject] 已注入`，面板显示 daemon 已连接（状态卡片出数）。
+
 ---
 
 ## 发布与排期（建议）
 
 | 版本 | 内容 | 理由 |
 |---|---|---|
-| **v1.0.1** | **F11 发布链前端修复** + F1 PATH + F6 bench 默认 + F7 conns + F9 dst_ip | F11 为 P0 分发阻断级插队打头；与 F1 同属 packaging/release 链路一次发版验证；F9 是 F3/F4 的观测前提 |
+| **v1.0.1** | **F11 发布链前端修复**（已合入+演练通过）+ **F13 注入链修复** + F1 PATH + F6 bench 默认 + F7 conns + F9 dst_ip | F11 为 P0 分发阻断级插队打头；F13 无它 GUI「能看不能用」，必须同版；与 F1 同属 packaging/release 链路一次发版验证；F9 是 F3/F4 的观测前提 |
 | **v1.0.2** | F3 冷启动（拨号帽+预热+竞速）+ F5 doctor 分级 + F12 off 生命周期 | 同属「首请求体验 + 生命周期」一揽子 |
 | **v1.0.3** | F4 数据面回灌 | 调度器内核改动，单独一版留观测期 |
 | **v1.1.0** | F2 镜像链 + rules v11 + F8 池加厚 + F10 衰减 | 含签名规则发版与 schema bump，小版本号 |
