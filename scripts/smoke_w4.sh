@@ -111,7 +111,7 @@ PORT=$PORT
 PORT_POISON=$PORT_POISON
 SRV_PID=$SRV_PID
 EOF
-  [ "$(run version)" = "ghydra version 1.0.0" ] || fail "初始版本应为 1.0.0"
+  [ "$(run version | head -1)" = "ghydra version 1.0.0" ] || fail "初始版本应为 1.0.0"
 
   # Windows：转原生路径（pwd -W → C:/...），exe 侧 HOME 用
   D_NATIVE="$D"
@@ -142,7 +142,7 @@ cmd_scenario_a() {
   run update --api "$API" --trust-host 127.0.0.1 --cdn "" --db "" >"$D/apply.log" 2>&1 \
     || { cat "$D/apply.log"; cat "$D/srv.log"; fail "apply 失败"; }
   grep -q "已更新到 v1.0.1" "$D/apply.log" || { cat "$D/apply.log"; fail "apply 应成功"; }
-  [ "$(run version)" = "ghydra version 1.0.1" ] || fail "升级后版本应 1.0.1（得 $(run version 2>&1)）"
+  [ "$(run version | head -1)" = "ghydra version 1.0.1" ] || fail "升级后版本应 1.0.1（得 $(run version 2>&1)）"
   [ -f "$D/ghydra$EXT.old" ] || fail "old 凭证应在场"
   echo "A-debug: D=$D D_NATIVE=$D_NATIVE HOME-view: $(HOME="$(home_native)" "$D/ghydra$EXT" version >/dev/null 2>&1; echo ok)"
   ls -la "$D/.ghydra" 2>&1 | head -8
@@ -155,7 +155,7 @@ cmd_scenario_b() {
   load_state
   API="http://127.0.0.1:$PORT/repos/xueweijian/ghydra"
   run update rollback --db "" >"$D/rb.log" 2>&1 || { cat "$D/rb.log"; fail "rollback 失败"; }
-  [ "$(run version)" = "ghydra version 1.0.0" ] || fail "回滚后版本应 1.0.0"
+  [ "$(run version | head -1)" = "ghydra version 1.0.0" ] || fail "回滚后版本应 1.0.0"
   run update check --api "$API" --trust-host 127.0.0.1 --cdn "" --db "" 2>&1 | grep -q "曾启动失败被回滚" \
     || fail "bad_version 应生效"
   ok "B 回滚链（1.0.1 → 1.0.0，bad_version 记忆）"
@@ -166,7 +166,7 @@ cmd_scenario_c() {
   D2=$(mktemp -d /tmp/w4c.XXXXXX)
   # B 回滚后主位已是 1.0.0（RollbackSwap: old→exe, exe→.bad）
   cp "$D/ghydra$EXT" "$D2/ghydra$EXT"
-  [ "$(HOME="$D2" USERPROFILE="$D2" "$D2/ghydra$EXT" version)" = "ghydra version 1.0.0" ] || fail "C 前置：主位应仍为 1.0.0"
+  [ "$(HOME="$D2" USERPROFILE="$D2" "$D2/ghydra$EXT" version | head -1)" = "ghydra version 1.0.0" ] || fail "C 前置：主位应仍为 1.0.0"
   "$BIN/releasesrv$EXT" -listen "127.0.0.1:$PORT_POISON" -newbin "$BIN/ghydra-new$EXT" \
     -version v1.0.1 -key "$KEY" -tamper-asset >"$D2/srv.log" 2>&1 &
   P_PID=$!
@@ -178,7 +178,7 @@ cmd_scenario_c() {
     --trust-host 127.0.0.1 --cdn "" --db "" >"$D2/apply.log" 2>&1 && fail "投毒 apply 应失败" || true
   { grep -q "校验失败" "$D2/apply.log" || grep -q "sha256" "$D2/apply.log"; } \
     || { cat "$D2/apply.log"; fail "应报 sha256 拒"; }
-  [ "$(HOME="$D2" USERPROFILE="$D2" "$D2/ghydra$EXT" version)" = "ghydra version 1.0.0" ] || fail "投毒拒后版本零破坏"
+  [ "$(HOME="$D2" USERPROFILE="$D2" "$D2/ghydra$EXT" version | head -1)" = "ghydra version 1.0.0" ] || fail "投毒拒后版本零破坏"
   [ ! -f "$D2/ghydra$EXT.old" ] || fail "投毒拒不应产生 old 凭证"
   kill $P_PID 2>/dev/null || true
   rm -rf "$D2"
