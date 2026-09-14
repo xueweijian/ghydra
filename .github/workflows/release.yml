@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 env:
-  GO_VERSION: "1.25" # 与根 go.mod（toolchain go1.25.0）一致
+  GO_VERSION: "1.25" # 与根 go.mod（toolchain go1.25.0）一致；v2 注册修复
 
 jobs:
   crossbuild:
