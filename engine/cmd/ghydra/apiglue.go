@@ -98,6 +98,14 @@ func staticSPA(dir string) http.Handler {
 	}
 	fs := http.FileServer(http.Dir(dir))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// F13：/wails/ 前缀显式 404——浏览器面板模式不提供 wails runtime
+		//（壳专属，index.html 引用脚本在此场景静默失败）。若不拦，SPA
+		// fallback 会把 /wails/runtime.js 回成 index.html，前端把它当 JS
+		// 解析触发语法错误。
+		if strings.HasPrefix(r.URL.Path, "/wails/") {
+			http.NotFound(w, r)
+			return
+		}
 		p := strings.TrimPrefix(r.URL.Path, "/")
 		if p == "" {
 			p = "index.html"

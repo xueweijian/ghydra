@@ -81,13 +81,13 @@ jobs:
         # linux 用 gtk3 后端（webkit2gtk-4.1，22.04+ 兼容）；默认后端是
         # gtk4/webkitgtk-6.0（仅 24.04+ 有）。windows/mac 忽略该 tag。
         # gui tag：internal/guiapp/gui.go 与 cmd/spikecheck 的编译边界（D1）。
-        run: go vet -tags "gui gtk3" ./...
+        run: go vet -tags "gui gtk3 production" ./...
       - name: go build（主二进制 gui 变体——单二进制，D1）
         run: |
           mkdir -p dist
-          go build -tags "gui gtk3" -trimpath -ldflags="-s -w" -o dist/ghydra-gui${{ matrix.os == 'windows-2022' && '.exe' || '' }} ./engine/cmd/ghydra
+          go build -tags "gui gtk3 production" -trimpath -ldflags="-s -w" -o dist/ghydra-gui${{ matrix.os == 'windows-2022' && '.exe' || '' }} ./engine/cmd/ghydra
       - name: go build（spikecheck）
-        run: go build -tags "gui gtk3" -o dist/ ./cmd/spikecheck
+        run: go build -tags "gui gtk3 production" -o dist/ ./cmd/spikecheck
       - name: xvfb 冒烟（linux：栈启动/窗口/托盘/autostart 往返）
         if: runner.os == 'Linux'
         run: xvfb-run -a timeout 90 ./dist/spikecheck

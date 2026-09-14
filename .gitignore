@@ -9,6 +9,9 @@ dist/
 # W3 worker
 worker/node_modules/
 
+# GUI 前端本地依赖（F13：本机构建误扫进暂存区后补）
+node_modules/
+
 # W2 规则签名本地状态
 rules/.lastsigned
 fakesite

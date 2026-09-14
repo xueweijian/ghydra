@@ -174,18 +174,25 @@ ERR [AssetFileServerFS] Unable to handle request url=/ err=no `index.html` could
 
 **定性**：生命周期缺口——off 的清理面只覆盖「自己拉起的 serve」，不识别「GUI 壳拉起的 serve」场景。**详细设计留 v1.0.2 规划补齐**，关键约束：off 语义必须与 supervisor.Decide 的「非启动期死亡且无 pending 绝不复活」off 保护自洽——off 清掉壳拉起的 serve 后，壳不得把它复活；识别面走 serve.json（pid/port 运行态真相）而非进程名扫描。
 
-## F13（P1）GUI webview 连接注入链断：WindowRuntimeReady 疑未触发
+## F13（P1）GUI webview 连接链三重断（终版根因 + 已修复）
 
-**问题**（v1.0.1-rc1 演练发现，2026-09-15）：F11 修复后面板完整渲染，但恒显「daemon 未连接 / 读取中」；daemon 本身健康（serve.json 正常、9801 监听、/status 正常、conns=7）。
+**问题**（v1.0.1-rc1 演练发现，2026-09-15）：F11 修复后面板完整渲染，但恒显「daemon 未连接」；daemon 本身健康（9801 监听、/status 正常）。
 
-**证据与根因假设**：`connInjector` 的注入门是 `events.Common.WindowRuntimeReady`（gui.go:160）；supervisor 每 2s tick 经 OnState(running) 调 `inject()`，但 `ready=false` 时只挂 pending。gui.log 全程**零 `[inject] 已注入` 行** → 唯一自洽解释：**该钩子在 Windows/WebView2（wails v3.0.0-beta.20）上从未触发**，`onReady` 不被调，token/daemonBase 永不注入，前端拿不到凭据连不上 daemon。v1.0.0 白屏时代此链路不可观测；CI 只编译不跑 GUI（ci-gui 无 Windows 运行时用例）、spikecheck 仅 Linux——测试盲区。
+**终版根因（2026-09-15 深挖三层，标题信标 + AX 树 + 擦存储对照实验实证）**：
+1. **前端未加载 wails runtime**：index.html 无 `<script src="/wails/runtime.js">`，而 ExecJS 的 pendingJS 队列仅在 runtime 就绪后 flush——注入链起点即断；
+2. **ready 链在 beta.20 不可靠**：即便补引 runtime + `production` 标签（无它服务的是 dev 变体 runtime.debug.js，连 `_wails` 都不装——真机两轮对照 `RUNTIME-EMPTY` vs `RUNTIME-GOOD` 实证加载不确定），`WindowRuntimeReady` 钩子在全部会话中零触发（每 2s tick 的 inject 全部挂起，`[inject]` 日志零出现）；
+3. **daemonBase 同源判定误伤**（关键层）：WebView2 origin 是 `http://wails.localhost`（http 协议！），client.ts 的 `protocol.startsWith("http") → location.origin` 误入浏览器兜底分支 → 全部 API 打到 `wails.localhost/api/*` → 404。**即使 token 注入成功，此层也独立致命**。
+4. 附带发现：supervisor goroutine 在 app.Run 主循环泵送前调 `SetURL` → 原生崩溃（Chrome_WidgetWin 注销错误，进程消失）。
 
-**修复方向（v1.0.1 实施时定稿）**：
-1. 事件排查：核对 beta.20 Windows 事件名/语义（`WindowRuntimeReady` vs `Wails.WindowReady` 等近似名），必要时多钩子冗余 + 首个到达者置 ready；
-2. 兜底定时补注：inject() 每 tick 都试（现已是），加「ready 后 N 秒内仍未注入则降级直接 ExecJS」或轮询 `win.ExecJS` 探测 localStorage 已生效；
-3. 测试补盲：ci-gui 加 Windows spikecheck 型冒烟（无头断言注入日志出现），进 P5 真机走查清单。
+**终版方案（弃 ExecJS/事件依赖，改确定性链路）**：
+1. `connInjector`（ready 门 + ExecJS）→ **`connReloader`**：token@port 键变化时 `SetURL("/?token=<tok>")` 重载——index.tsx 既有 `?token=` 落地逻辑接管 localStorage；3s 时间门保证主循环已泵送（SetURL 内部 InvokeSync，过早调用崩进程）；键去重保证正常 tick 零重载、SSE 原生重连；
+2. client.ts `daemonBase()`：hostname 为 `wails.localhost`/`*.localhost` 时排除同源分支，回落 `DEFAULT_BASE`（127.0.0.1:9801）；
+3. gui 变体构建统一加 `production` 标签（release.yml ×3 / ci-gui.yml / package.sh）——wails 发布语义正规化；
+4. 防御项：serve 浏览器托管的 staticSPA 对 `/wails/` 前缀显式 404（防未来重引 runtime 时 SPA fallback 把脚本回成 HTML），单测覆盖。
 
-**验收**：真机 `ghydra gui` 启动 ≤5s 内 gui.log 出现 `[inject] 已注入`，面板显示 daemon 已连接（状态卡片出数）。
+**实施状态（2026-09-15）**：已实现并真机验收通过——擦除 WebView2 Local Storage（模拟新装机）后启动：`[inject] SetURL 已应用连接（port=9801）`、进程稳定、AX 树读出面板实时数据（连接表 github.com 58ms OK 直连 + 多条 267-303ms OK 加速含真实流量字节、六场景 doctor 快照、过滤控件）。go test 全量绿 + gui-production vet 绿 + vitest 48/48。
+
+**验收**：真机（新装机口径）`ghydra gui` ≤5s 出现 `[inject] SetURL` 日志，面板状态卡片出数、连接表滚动。
 
 ---
 

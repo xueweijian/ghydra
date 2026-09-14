@@ -30,6 +30,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -60,51 +61,57 @@ func tooltipFor(s supervisor.State) string {
 	}
 }
 
-// connInjector webview 连接注入（壳模式 UX 收口）：把 api-token 与实际
-// 端口写进 localStorage（client.ts 每请求现读，无需重载即生效；端口
-// 变化时 location.reload 重挂 SSE）。首次注入发生在页面加载后——
-// WindowRuntimeReady 前到达的状态会挂起，ready 后补注。
-type connInjector struct {
-	mu      sync.Mutex
-	ready   bool
-	pending bool
-	lastIns int // 上次注入的端口（0 = 未注入过）
+// connReloader webview 连接收口（F13 终版）：token/端口就绪或变化时，
+// SetURL 携 ?token= 重载面板——index.tsx 落地 token 进 localStorage，
+// daemonBase 由 client.ts 按 wails 虚拟域判定。全程 Go 侧原生调用，
+// 不依赖 wails runtime/ExecJS/WindowRuntimeReady（beta.20 该链不稳：
+// rc1 起 [inject] 零出现，dev/prod runtime 实测 _wails 安装时有时无，
+// 且 WebView2 origin=http://wails.localhost 使 client.ts 的同源判定
+// 误入浏览器兜底分支——三层叠加，故弃 ExecJS 改 SetURL）。
+type connReloader struct {
+	mu   sync.Mutex
+	last string // 上次应用的 token@port 键（幂等去重）
+	pump bool   // 主循环泵送门：SetURL 内部 InvokeSync，过早调用（app.Run
+	// 主循环未起）实测崩进程（Chrome_WidgetWin 注销错误）——用时间门
+	// 而非 wails 事件（WindowRuntimeReady 在 beta.20 不可靠，F13 实证）。
 }
 
-func (c *connInjector) onReady() {
+// markPump 由 Run 尾部的定时器置位（app.Run 已泵送）。
+func (c *connReloader) markPump() {
 	c.mu.Lock()
-	c.ready = true
-	do := c.pending
-	c.pending = false
+	c.pump = true
 	c.mu.Unlock()
-	if do {
-		c.inject()
-	}
 }
 
-func (c *connInjector) inject() {
+// apply 幂等：泵送就绪且键变化才重载（SSE 重载后原生重连，正常 tick 零开销）。
+func (c *connReloader) apply() {
 	c.mu.Lock()
-	if !c.ready {
-		c.pending = true
-		c.mu.Unlock()
+	pump, same := c.pump, false
+	c.mu.Unlock()
+	if !pump {
 		return
 	}
-	c.mu.Unlock()
-
 	dir := supervisor.DefaultDir()
 	tok := supervisor.ReadToken(dir)
 	port := supervisor.ReadServePort(dir)
-	if tok == "" || port == 0 || port == c.lastIns {
-		return // token 未生成 / daemon 未起 / 端口未变（更新重启同端口无需 reload，SSE 原生重连）
+	if tok == "" || port == 0 {
+		return // token 未生成 / daemon 未起
 	}
-	c.lastIns = port
-	win.ExecJS(fmt.Sprintf(
-		`localStorage.setItem('ghydra.token',%q);localStorage.setItem('ghydra.daemonBase','http://127.0.0.1:%d');location.reload();`,
-		tok, port))
-	log.Printf("[inject] 已注入 token + 127.0.0.1:%d", port)
+	key := fmt.Sprintf("%s@%d", tok, port)
+	c.mu.Lock()
+	same = key == c.last
+	c.mu.Unlock()
+	if same {
+		return
+	}
+	win.SetURL(fmt.Sprintf("/?token=%s", tok))
+	c.mu.Lock()
+	c.last = key
+	c.mu.Unlock()
+	log.Printf("[inject] SetURL 已应用连接（port=%d）", port)
 }
 
-// win 在 inject 闭包里赋值（app.Window 创建后）。
+// win 在 Run 里赋值（app.Window 创建后）。
 var win *application.WebviewWindow
 
 // Run 启动 GUI 壳（阻塞直至退出；致命错误 log.Fatal 非零退出）。
@@ -121,7 +128,7 @@ func Run() {
 		log.Fatalf("前端资源挂载失败: %v", err)
 	}
 
-	inj := &connInjector{}
+	inj := &connReloader{}
 	var app *application.App
 	app = application.New(application.Options{
 		Name:        "GHydra",
@@ -157,9 +164,6 @@ func Run() {
 		win.Hide()
 		e.Cancel()
 	})
-	win.RegisterHook(events.Common.WindowRuntimeReady, func(e *application.WindowEvent) {
-		inj.onReady() // 页面就绪后才允许 ExecJS 注入
-	})
 
 	tray := app.SystemTray.New()
 	tray.SetIcon(IconPNG)
@@ -173,12 +177,14 @@ func Run() {
 		OnState: func(s supervisor.State) {
 			tray.SetTooltip(tooltipFor(s))
 			if s.Phase == "running" || s.Phase == "updated" {
-				inj.inject()
+				inj.apply()
 			}
 		},
 		Logf: log.Printf,
 	})
 	go sup.Run(context.Background())
+	// 3s 泵送门：app.Run 主循环必然已泵送，SetURL 安全（见 connReloader.pump）
+	time.AfterFunc(3*time.Second, inj.markPump)
 
 	trayMenu := app.NewMenu()
 	trayMenu.Add("打开面板").OnClick(func(*application.Context) {
