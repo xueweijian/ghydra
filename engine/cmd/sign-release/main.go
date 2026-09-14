@@ -33,6 +33,7 @@ const apiBase = "https://api.github.com/repos/xueweijian/ghydra"
 
 type release struct {
 	ID      int     `json:"id"`
+	TagName string  `json:"tag_name"`
 	Draft   bool    `json:"draft"`
 	Assets  []asset `json:"assets"`
 	HtmlURL string  `json:"html_url"`
@@ -95,22 +96,56 @@ func main() {
 }
 
 func findRelease(token, base, tag string) (*release, error) {
+	// 先试 tags 端点（published）；**该端点不返回 draft**——draft 需遍历
+	// /releases 按 tag+draft 匹配（rc1 演练实证：同 tag 双 release 时
+	// tags 端点命中 published 旧格式，拿不到 checksums.txt）。
 	req, _ := http.NewRequest("GET", base+"/releases/tags/"+tag, nil)
 	auth(req, token)
 	resp, err := http.DefaultClient.Do(req)
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
+			var rel release
+			if err := json.NewDecoder(resp.Body).Decode(&rel); err == nil && hasAsset(&rel, "checksums.txt") {
+				return &rel, nil
+			}
+		}
+	}
+	// draft 遍历
+	req2, _ := http.NewRequest("GET", base+"/releases?per_page=30", nil)
+	auth(req2, token)
+	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("HTTP %d（draft release 匿名不可见，需 GH_TOKEN）", resp.StatusCode)
+	defer resp2.Body.Close()
+	if resp2.StatusCode != 200 {
+		return nil, fmt.Errorf("列 releases: HTTP %d", resp2.StatusCode)
 	}
-	var rel release
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+	var rels []release
+	if err := json.NewDecoder(resp2.Body).Decode(&rels); err != nil {
 		return nil, err
 	}
-	return &rel, nil
+	for i := range rels {
+		if rels[i].Draft && tagFor(&rels[i]) == tag && hasAsset(&rels[i], "checksums.txt") {
+			return &rels[i], nil
+		}
+	}
+	return nil, fmt.Errorf("未找到含 checksums.txt 的 release（tag=%s，含 draft）", tag)
 }
+
+func hasAsset(rel *release, name string) bool {
+	for _, a := range rel.Assets {
+		if a.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// tagFor release 对象没有 tag_name 字段注入（列表接口有）——release 结构
+// 已含 TagName（json tag_name），列表解码会填充。
+func tagFor(rel *release) string { return rel.TagName }
 
 func fetchAsset(token, base string, rel *release, name string) []byte {
 	for _, a := range rel.Assets {
