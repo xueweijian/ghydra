@@ -103,6 +103,12 @@ func TestGolden(t *testing.T) {
 	b, _ = json.Marshal(hello)
 	checkGolden(t, "sse_hello.json", b)
 
+	// P4/D7：update 状态机 golden（downloading 中间态——字段最全形态）
+	us := UpdateStatus{State: "downloading", Current: "1.0.0", Target: "1.0.1",
+		Progress: 42.5, UpdatedAt: "2026-09-14T00:00:01Z"}
+	b, _ = json.Marshal(us)
+	checkGolden(t, "update_status.json", b)
+
 	_ = srv // golden 走 HTTP 路径；srv 留作未来直接注入 Server 级断言
 }
 

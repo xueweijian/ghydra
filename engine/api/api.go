@@ -41,8 +41,12 @@ type Deps struct {
 	DoctorRun func(repo string) (string, error)              // 异步触发；返回 runID；忙 = ErrBusy
 
 	// 可选（nil → 端点 503 "not assembled"）
-	Rules         func() RulesSnapshot   // GET /api/rules
-	RulesRefresh  func() (string, error) // POST /api/rules/refresh（异步单飞；忙 = ErrBusy）
+	Rules func() RulesSnapshot // GET /api/rules
+	// Update*（P4/D7）：serve 装配 selfupdate 三件套；nil = 503。
+	UpdateCheck   func() (UpdateInfo, error) // GET（同步 + 5min 缓存，装配层）
+	UpdateApply   func() (string, error)     // POST（异步单飞；忙 = ErrBusy → 409）
+	UpdateStatus  func() UpdateStatus        // GET（状态机快照；SSE status 帧同源）
+	RulesRefresh  func() (string, error)     // POST /api/rules/refresh（异步单飞；忙 = ErrBusy）
 	SystemOn      func(mode string) (OnResp, error)
 	SystemOff     func(shutdown bool) (OffResp, error)
 	DoctorSummary func(hours int) (DoctorSummaryResp, error)
@@ -247,6 +251,33 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"started": true, "refresh_id": id})
+	case sub == "update/check" && r.Method == http.MethodGet:
+		if s.deps.UpdateCheck == nil {
+			writeErr(w, http.StatusServiceUnavailable, "update not assembled")
+			return
+		}
+		info, err := s.deps.UpdateCheck()
+		writeDep(w, info, err)
+
+	case sub == "update/apply" && r.Method == http.MethodPost:
+		if s.deps.UpdateApply == nil {
+			writeErr(w, http.StatusServiceUnavailable, "update not assembled")
+			return
+		}
+		id, err := s.deps.UpdateApply()
+		if err != nil {
+			writeDep(w, nil, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, UpdateApplyResp{Started: true, ApplyID: id})
+
+	case sub == "update/status" && r.Method == http.MethodGet:
+		if s.deps.UpdateStatus == nil {
+			writeErr(w, http.StatusServiceUnavailable, "update not assembled")
+			return
+		}
+		writeJSON(w, http.StatusOK, s.deps.UpdateStatus())
+
 	case sub == "mitm/status" && r.Method == http.MethodGet:
 		writeJSON(w, http.StatusOK, MitmStatus{Available: false, Enabled: false,
 			Reason: "mitm engine lands in W2"})

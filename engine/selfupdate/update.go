@@ -40,9 +40,19 @@ type Updater struct {
 	InstallDir string
 	StatePath  string
 	Files      []string // 安装文件集（win: [ghydra.exe]；unix: [ghydra, ghydra-gui]）
-	Daemon     DaemonControl
-	Pub        ed25519.PublicKey // 空 = FrozenPublicKey()
-	Log        func(format string, args ...any)
+	// Variant 变体声明（P4/D7）：""=CLI；"gui"。gui 构建必须声明——
+	// 否则 SelectAsset 按前缀误选 CLI 归档，交换后 gui 消失。
+	Variant string
+	// ServeMode 两段式（P4/D7）：serve 进程内 apply——内联自检通过后
+	// 即返回（pending 留给继任进程 BootHook 确认），不编排 daemon 重启。
+	ServeMode bool
+	// OnPhase 阶段回调（serve 内 apply 状态机）：参数
+	// "downloading"|"verifying"|"swapping"；nil 安全。check 完成后、
+	// 下载前调 downloading；验签前 verifying；交换前 swapping。
+	OnPhase func(phase string)
+	Daemon  DaemonControl
+	Pub     ed25519.PublicKey // 空 = FrozenPublicKey()
+	Log     func(format string, args ...any)
 	// TrustedHosts 资产域白名单覆盖（仅集成测试用 fake server 时设置）。
 	TrustedHosts map[string]bool
 	// FetchJSON Releases API 拉取注入（生产：A 通道 IP 直连；默认：u.HTTP）。
@@ -116,6 +126,9 @@ func (u *Updater) Check(ctx context.Context, opts SelectOpts) (Plan, error) {
 	}
 	opts.State = st
 	opts.TrustedHosts = u.TrustedHosts
+	if opts.Variant == "" {
+		opts.Variant = u.Variant // 装配层声明优先级低于显式 opts
+	}
 	return SelectAsset(rel, runtime.GOOS, runtime.GOARCH, u.Version, opts)
 }
 
@@ -124,6 +137,11 @@ func (u *Updater) Check(ctx context.Context, opts SelectOpts) (Plan, error) {
 func (u *Updater) ApplyPlan(ctx context.Context, plan Plan) error {
 	if u.DL == nil {
 		return errors.New("selfupdate: Downloader 未装配")
+	}
+	phase := func(p string) {
+		if u.OnPhase != nil {
+			u.OnPhase(p)
+		}
 	}
 	staging := filepath.Join(u.InstallDir, StagingDirName)
 	if err := os.RemoveAll(staging); err != nil {
@@ -134,6 +152,7 @@ func (u *Updater) ApplyPlan(ctx context.Context, plan Plan) error {
 	}
 
 	// 1. checksums + minisig（小文件，直接 Downloader；sha256 稍后统一验）
+	phase("downloading")
 	csPath := filepath.Join(staging, "checksums.txt")
 	if _, err := u.DL.Get(ctx, plan.Checksums.URL, csPath); err != nil {
 		return fmt.Errorf("selfupdate: 下载 checksums: %w", err)
@@ -151,6 +170,7 @@ func (u *Updater) ApplyPlan(ctx context.Context, plan Plan) error {
 		return err
 	}
 	// U1 第二防线：checksums 本身必须 minisign 验签通过
+	phase("verifying")
 	if err := VerifyChecksumsSignature(u.pub(), sigData, csData); err != nil {
 		return fmt.Errorf("selfupdate: checksums 验签失败（疑似投毒，拒）: %w", err)
 	}
@@ -182,6 +202,7 @@ func (u *Updater) ApplyPlan(ctx context.Context, plan Plan) error {
 	}
 
 	// 3. 交换 + 状态（pending 未确认）
+	phase("swapping")
 	daemonWas := u.Daemon != nil && u.Daemon.Alive()
 	ops, err := PlanSwap(u.InstallDir, u.Files)
 	if err != nil {
@@ -200,6 +221,13 @@ func (u *Updater) ApplyPlan(ctx context.Context, plan Plan) error {
 	// 4. 内联自检：exe version → daemon 重启对账；任何失败同步回滚
 	if err := u.selfCheck(plan.Version); err != nil {
 		return u.rollbackSync(plan.Version, daemonWas, fmt.Errorf("自检失败: %w", err))
+	}
+	if u.ServeMode {
+		// P4/D7 两段式（serve 内 apply）：pending 留盘即返回——daemon
+		// 不能编排自己的 Stop/Start（自杀）；继任进程由 GUI 壳拉起，
+		// BootHook 自检通过后 Confirm（本进程退出不 Confirm）。
+		u.logf("v%s 已交换（serve 模式：pending 留给继任进程确认）", plan.Version)
+		return nil
 	}
 	if daemonWas {
 		if err := u.restartDaemonAndWait(ctx, plan.Version); err != nil {

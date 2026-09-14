@@ -61,6 +61,11 @@ type SelectOpts struct {
 	AllowPrerelease bool
 	AllowDowngrade  bool
 	State           *State // 可选：bad_version 跳过
+	// Variant 变体寻址（P4/D7）：""=CLI（前缀 ghydra-<os>-<arch>.）；
+	// "gui"（前缀 ghydra-<os>-<arch>-gui.）。gui 二进制不指定 Variant 会
+	// 按前缀误选 CLI 归档——交换后 gui 消失（W4p1 遗留）。无对应变体
+	// 资产时明确报错，**绝不静默回落**另一变体。
+	Variant string
 	// TrustedHosts 资产域白名单覆盖（nil = 冻结 github 域集）。
 	// 仅供集成测试把 Check 指向 fake Release server；生产代码不得设置。
 	TrustedHosts map[string]bool
@@ -109,6 +114,14 @@ func SelectAsset(rel Release, goos, goarch, current string, opts SelectOpts) (Pl
 
 	plan := Plan{Version: target.String(), Notes: rel.Body, HTMLURL: rel.HTMLURL}
 	prefix := "ghydra-" + goos + "-" + goarch + "."
+	if opts.Variant != "" {
+		switch opts.Variant {
+		case "gui":
+			prefix = "ghydra-" + goos + "-" + goarch + "-gui."
+		default:
+			return Plan{}, fmt.Errorf("selfupdate: 未知变体 %q", opts.Variant)
+		}
+	}
 	for _, a := range rel.Assets {
 		switch {
 		case a.Name == "checksums.txt":
@@ -120,6 +133,10 @@ func SelectAsset(rel Release, goos, goarch, current string, opts SelectOpts) (Pl
 		}
 	}
 	if plan.Archive.Name == "" {
+		if opts.Variant != "" {
+			return Plan{}, fmt.Errorf("selfupdate: 无 %s/%s %s 变体资产（不回落默认变体——变体错装=功能消失）",
+				goos, goarch, opts.Variant)
+		}
 		return Plan{}, fmt.Errorf("selfupdate: 无 %s/%s 平台资产", goos, goarch)
 	}
 	if plan.Checksums.Name == "" || plan.Minisig.Name == "" {

@@ -1,8 +1,10 @@
 package selfupdate
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -177,5 +179,57 @@ func TestSelectAssetSkipsBadVersion(t *testing.T) {
 	st2 := &State{BadVersion: "1.0.1"}
 	if _, err := SelectAsset(rel2, "windows", "amd64", "1.0.0", SelectOpts{State: st2}); err != nil {
 		t.Errorf("更高版本不应被 bad_version 拦: %v", err)
+	}
+}
+
+// ---- P4/D7：variant 寻址（gui 变体不误选 CLI 归档——W4p1 遗留收口） ----
+
+func loadGUIReleaseFixture(t *testing.T) Release {
+	t.Helper()
+	data, err := os.ReadFile("testdata/release_gui.json")
+	if err != nil {
+		t.Fatalf("读 fixture: %v", err)
+	}
+	var rel Release
+	if err := json.Unmarshal(data, &rel); err != nil {
+		t.Fatalf("fixture JSON: %v", err)
+	}
+	return rel
+}
+
+func TestSelectAssetVariantGUI(t *testing.T) {
+	rel := loadGUIReleaseFixture(t)
+
+	// gui 变体命中 -gui 资产（windows zip）
+	plan, err := SelectAsset(rel, "windows", "amd64", "1.0.0", SelectOpts{Variant: "gui"})
+	if err != nil {
+		t.Fatalf("gui windows: %v", err)
+	}
+	if plan.Archive.Name != "ghydra-windows-amd64-gui.zip" {
+		t.Errorf("gui 应选 gui.zip，得到 %q", plan.Archive.Name)
+	}
+
+	// gui 变体命中 -gui 资产（darwin tar.gz）
+	plan2, err := SelectAsset(rel, "darwin", "arm64", "1.0.0", SelectOpts{Variant: "gui"})
+	if err != nil {
+		t.Fatalf("gui darwin: %v", err)
+	}
+	if plan2.Archive.Name != "ghydra-darwin-arm64-gui.tar.gz" {
+		t.Errorf("gui darwin 应选 gui.tar.gz，得到 %q", plan2.Archive.Name)
+	}
+
+	// gui 变体不误选 CLI 归档（darwin-amd64 无 gui 资产 → 明确报错，绝不回落 CLI）
+	_, err = SelectAsset(rel, "darwin", "amd64", "1.0.0", SelectOpts{Variant: "gui"})
+	if err == nil {
+		t.Fatal("darwin-amd64 无 gui 资产应报错（不得静默回落 CLI 归档——交换后 gui 消失）")
+	}
+	if !strings.Contains(err.Error(), "gui") {
+		t.Errorf("报错应说明 gui 变体缺失: %v", err)
+	}
+
+	// CLI 变体不受 gui 资产干扰（回归锁定）
+	plan3, err := SelectAsset(rel, "windows", "amd64", "1.0.0", SelectOpts{})
+	if err != nil || plan3.Archive.Name != "ghydra-windows-amd64.zip" {
+		t.Errorf("CLI 应选 CLI.zip: %v %+v", err, plan3)
 	}
 }

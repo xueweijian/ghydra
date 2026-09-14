@@ -623,3 +623,47 @@ func buildArchive(t *testing.T, name string, files map[string][]byte) []byte {
 // 编译期断言接口实现（防漂移）。
 var _ DaemonControl = (*fakeDaemon)(nil)
 var _ get.Fetcher = plainFetcher{}
+
+// ---- P4/D7 两段式：ServeMode（serve 内 apply） ----
+
+// L2 serve 内 apply：内联自检通过后即返回——pending 留盘**不 Confirm**、
+// 不编排 daemon 重启（daemon 不能 Stop 自己）；继任进程 BootHook 确认。
+func TestApplyServeModePendingBoot(t *testing.T) {
+	h := newHarness(t)
+	h.publishRelease(t, false, false, false)
+	h.updater.ServeMode = true
+	h.daemon.mu.Lock()
+	h.daemon.alive = true // daemon 在跑（serve 自己）
+	h.daemon.nextVersion = "1.0.0"
+	h.daemon.mu.Unlock()
+
+	plan := h.check(t, SelectOpts{})
+	if err := h.updater.ApplyPlan(context.Background(), plan); err != nil {
+		t.Fatalf("ApplyPlan(ServeMode): %v", err)
+	}
+
+	// pending 留盘、未 confirmed（继任进程 BootHook 的确认凭证）
+	st, exists, err := LoadState(h.updater.StatePath)
+	if err != nil || !exists {
+		t.Fatalf("状态: %v %v", err, exists)
+	}
+	if st.PendingVersion != "1.0.1" {
+		t.Errorf("PendingVersion = %q（应 1.0.1）", st.PendingVersion)
+	}
+	if st.Confirmed {
+		t.Error("ServeMode 不得 Confirm——pending 必须留给继任进程")
+	}
+	if !st.DaemonWasRunning {
+		t.Error("DaemonWasRunning 应为 true（继任据此决定重拉行为）")
+	}
+
+	// 零 daemon 编排（Stop=自杀防线）
+	if stops, starts := h.daemon.counts(); stops != 0 || starts != 0 {
+		t.Errorf("ServeMode 不得触碰 daemon 编排: stops=%d starts=%d", stops, starts)
+	}
+
+	// old 凭证在场（继任启动失败时 rollback 凭证完整）
+	if _, err := os.Stat(filepath.Join(h.dir, OldName)); err != nil {
+		t.Errorf("old 凭证应在场: %v", err)
+	}
+}

@@ -53,9 +53,21 @@ import (
 	"github.com/xueweijian/ghydra/engine/sysproxy"
 )
 
+// buildVariant 变体声明（P4/D7）：gui 构建时 -ldflags -X main.buildVariant=gui。
+// 空 = CLI。经 selfupdateglue 传入 Updater.Variant 驱动 -gui 资产寻址。
+var buildVariant string
+
 // Version 构建版本（CI release 打 tag 时 -ldflags 注入；dev 兜底）。
 // W4 自更新对比源；W3a 起 status 帧/设置页展示。
 var Version = "dev"
+
+func init() {
+	// P4/D8：normalize 注入值——release 注入 tag 名（v1.2.3）时剥 v 前缀，
+	// 展示层统一 "v%s"（否则 "vv1.2.3"）。semver 解析本就容忍 v 前缀，
+	// 此处只为展示一致（rc1 演练实证 "当前 vv0.5.0-beta.1"）。
+	Version = strings.TrimPrefix(Version, "v")
+	buildVariant = strings.TrimPrefix(buildVariant, "-")
+}
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
@@ -418,6 +430,14 @@ func serveCmd(args []string) {
 			RulesIntervalS: int64(*rulesInterval / time.Second),
 		}
 	}
+	// P4/D7：serve 内自更新状态机（两段式第一段）。不可用 = nil（/api/update 503 面）。
+	var updateRun *updateRunner
+	updateRun = newUpdateRunner(*dbPath, cdnFn(), func() {
+		// apply 成功 → pending_boot → 优雅退出；继任由 GUI 壳拉起（D1），
+		// CLI 场景由用户重跑 ghydra on（退出 hook 恢复代理不留半接管态）。
+		log.Printf("[update] v%s 更新就绪，优雅退出等待继任", updateRun.Status().Target)
+		shutdownOnce.Do(func() { close(shutdownCh) })
+	}, log.Printf)
 	apiSrv = api.New(api.Deps{
 		Status: func() api.ApiStatus {
 			st := api.ApiStatus{
@@ -446,6 +466,10 @@ func serveCmd(args []string) {
 				} else if err != nil {
 					log.Printf("[api] 接管态查询失败: %v", err)
 				}
+			}
+			if updateRun != nil {
+				us := updateRun.Status()
+				st.Update = &us
 			}
 			return st
 		},
@@ -512,6 +536,24 @@ func serveCmd(args []string) {
 				log.Printf("[api] 配置已持久化（重启生效）: %v", requires)
 			}
 			return api.ConfigSetResp{ApiConfig: buildConfig(), RequiresRestart: requires}, nil
+		},
+		UpdateCheck: func() (api.UpdateInfo, error) {
+			if updateRun == nil {
+				return api.UpdateInfo{}, api.UserError("update not assembled")
+			}
+			return updateRun.Check()
+		},
+		UpdateApply: func() (string, error) {
+			if updateRun == nil {
+				return "", api.UserError("update not assembled")
+			}
+			return updateRun.Apply()
+		},
+		UpdateStatus: func() api.UpdateStatus {
+			if updateRun == nil {
+				return api.UpdateStatus{State: "idle", Current: Version, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
+			}
+			return updateRun.Status()
 		},
 		SystemOn: func(mode string) (api.OnResp, error) {
 			if err := applyTakeover(*dbPath, mode, portOf(actualAddr)); err != nil {

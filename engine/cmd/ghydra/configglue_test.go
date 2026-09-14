@@ -215,3 +215,27 @@ func TestPersistedRoundtrip(t *testing.T) {
 			*listen, *cdn, rulesInterval, doctorInterval)
 	}
 }
+
+// ---- P4/D7：updateRunner L1（状态机转移/单飞/缓存） ----
+
+func newTestRunner(t *testing.T) *updateRunner {
+	t.Helper()
+	// updater 不可用的环境（StatePath 空）也必须给 idle 兜底——503 面
+	// 由 nil runner 表达（装配层），runner 本身永不 nil panic。
+	r := newUpdateRunner("", "", nil, t.Logf)
+	if r != nil {
+		t.Cleanup(func() {})
+	}
+	return r
+}
+
+func TestUpdateRunnerIdleFallback(t *testing.T) {
+	r := newTestRunner(t)
+	if r == nil {
+		t.Skip("updater 装配不可用（无 HOME），503 面由装配层保证")
+	}
+	st := r.Status()
+	if st.State != "idle" || st.Current == "" {
+		t.Fatalf("idle 兜底: %+v", st)
+	}
+}

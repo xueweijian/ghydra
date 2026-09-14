@@ -610,3 +610,81 @@ func TestDepErrorFallback(t *testing.T) {
 		t.Errorf("internal error: %d %s", resp.StatusCode, body)
 	}
 }
+
+// ---- P4/D7：/api/update/* ----
+
+func TestUpdateEndpoints(t *testing.T) {
+	st := &depState{}
+	deps := testDeps(st)
+	calls := 0
+	running := false
+	deps.UpdateCheck = func() (UpdateInfo, error) {
+		calls++
+		return UpdateInfo{
+			Current: "1.0.0", Latest: "1.0.1", HasUpdate: true,
+			Notes: "修复若干", HTMLURL: "https://github.com/x/r/releases/tag/v1.0.1",
+			CheckedAt: "2026-09-14T00:00:00Z", Cached: calls > 1,
+		}, nil
+	}
+	deps.UpdateApply = func() (string, error) {
+		if running {
+			return "", ErrBusy
+		}
+		running = true
+		return "apply-1", nil
+	}
+	deps.UpdateStatus = func() UpdateStatus {
+		return UpdateStatus{State: "downloading", Current: "1.0.0", Target: "1.0.1",
+			Progress: 42.5, UpdatedAt: "2026-09-14T00:00:01Z"}
+	}
+	srv := New(deps, testToken)
+	ts := newBareServer(t, srv)
+
+	// check
+	resp, body := call(t, "GET", ts.URL+"/api/update/check", nil, authHdr())
+	if resp.StatusCode != 200 {
+		t.Fatalf("check: %d %s", resp.StatusCode, body)
+	}
+	var info UpdateInfo
+	if err := json.Unmarshal([]byte(body), &info); err != nil {
+		t.Fatal(err)
+	}
+	if !info.HasUpdate || info.Latest != "1.0.1" || info.Current != "1.0.0" {
+		t.Errorf("check 响应: %+v", info)
+	}
+
+	// apply：200 + 单飞 409
+	resp, body = call(t, "POST", ts.URL+"/api/update/apply", map[string]any{}, authHdr())
+	if resp.StatusCode != 200 || !strings.Contains(body, `"apply_id"`) {
+		t.Fatalf("apply: %d %s", resp.StatusCode, body)
+	}
+	resp, _ = call(t, "POST", ts.URL+"/api/update/apply", map[string]any{}, authHdr())
+	if resp.StatusCode != 409 {
+		t.Errorf("apply 单飞应 409: %d", resp.StatusCode)
+	}
+	running = false
+
+	// status
+	resp, body = call(t, "GET", ts.URL+"/api/update/status", nil, authHdr())
+	if resp.StatusCode != 200 {
+		t.Fatalf("status: %d", resp.StatusCode)
+	}
+	var us UpdateStatus
+	_ = json.Unmarshal([]byte(body), &us)
+	if us.State != "downloading" || us.Target != "1.0.1" || us.Progress != 42.5 {
+		t.Errorf("status: %+v", us)
+	}
+}
+
+func TestUpdateNotAssembled(t *testing.T) {
+	deps := testDeps(&depState{})
+	srv := New(deps, testToken)
+	ts := newBareServer(t, srv)
+	for _, c := range []struct{ m, p string }{
+		{"GET", "/api/update/check"}, {"POST", "/api/update/apply"}, {"GET", "/api/update/status"},
+	} {
+		if resp, body := call(t, c.m, ts.URL+c.p, map[string]any{}, authHdr()); resp.StatusCode != http.StatusServiceUnavailable {
+			t.Errorf("%s %s: %d（want 503）%s", c.m, c.p, resp.StatusCode, body)
+		}
+	}
+}

@@ -23,7 +23,9 @@ export GOTOOLCHAIN=auto GOMAXPROCS=1
 export GOPROXY="${GOPROXY:-https://goproxy.cn,direct}"
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)  # 绝对化（后续 subshell tar/zip 相对路径陷阱）
-LDFLAGS="-s -w -X main.Version=$VER"
+LDFLAGS="-s -w -X main.Version=${VER#v}"  # strip v（展示层统一加 v——双 v 防线第一道）
+# gui 变体构建追加 -X main.buildVariant=gui（D7 变体寻址声明）
+gldflags() { case "$1" in *-gui) echo "$LDFLAGS -X main.buildVariant=gui";; *) echo "$LDFLAGS";; esac; }
 
 sums="$OUT/SHA256SUMS"
 : > "$sums"
@@ -75,7 +77,7 @@ for p in "$@"; do
   if [ "$p" = "windows-amd64-gui" ]; then
     # gui 变体：win CGO=0 纯 Go 可交叉；linux/darwin gui 需 CGO（CI 原生），
     # 本脚本仅负责 windows-amd64-gui（其余平台 gui 由 release.yml 原生 job 出）。
-    gobuild "$stage/$exe" go build -p 1 -tags gui -trimpath -ldflags="$LDFLAGS" -o "$stage/$exe" ./engine/cmd/ghydra
+    gobuild "$stage/$exe" go build -p 1 -tags gui -trimpath -ldflags="$(gldflags "$p")" -o "$stage/$exe" ./engine/cmd/ghydra
   else
     gobuild "$stage/$exe" go build -p 1 -trimpath -ldflags="$LDFLAGS" -o "$stage/$exe" ./engine/cmd/ghydra
   fi

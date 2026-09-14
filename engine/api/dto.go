@@ -25,7 +25,8 @@ type ApiStatus struct {
 	Channel    ChannelSnapshot         `json:"channel"`
 	CDN        string                  `json:"cdn,omitempty"`
 	Rules      RulesStatus             `json:"rules"`
-	Takeover   TakeoverState           `json:"takeover"` // 系统代理接管态（W3a）
+	Takeover   TakeoverState           `json:"takeover"`         // 系统代理接管态（W3a）
+	Update     *UpdateStatus           `json:"update,omitempty"` // 自更新状态机（P4/D7；nil = 未装配/idle 不推）
 }
 
 // TakeoverState 接管态：on = 快照行存在（崩溃对账同源判定）。
@@ -129,6 +130,37 @@ type ConfigPatch struct {
 	RulesIntervalS *int64  `json:"rules_interval_s"` // P4/D6：秒；持久化，重启生效
 	Listen         *string `json:"listen"`           // P4/D6：127.0.0.1:port；持久化，重启生效
 	DoctorEveryS   *int64  `json:"doctor_every_s"`   // P4/D6：秒（0=关）；持久化，重启生效
+}
+
+// ---- /api/update/*（P4/D7）----
+
+// UpdateInfo GET /api/update/check 响应（同步；装配层 5min 缓存）。
+type UpdateInfo struct {
+	Current   string `json:"current"`
+	Latest    string `json:"latest,omitempty"`
+	HasUpdate bool   `json:"has_update"`
+	Notes     string `json:"notes,omitempty"` // changelog 首行
+	HTMLURL   string `json:"html_url,omitempty"`
+	CheckedAt string `json:"checked_at"` // RFC3339 UTC
+	Cached    bool   `json:"cached"`     // 缓存命中
+	Error     string `json:"error,omitempty"`
+}
+
+// UpdateStatus 状态机快照（GET /api/update/status + SSE status 帧 update 子对象）。
+// state: idle | checking | downloading | verifying | swapping | pending_boot | failed
+type UpdateStatus struct {
+	State     string  `json:"state"`
+	Current   string  `json:"current"`
+	Target    string  `json:"target,omitempty"`
+	Progress  float64 `json:"progress_pct,omitempty"` // 0-100（downloading 态）
+	Error     string  `json:"error,omitempty"`
+	UpdatedAt string  `json:"updated_at"` // RFC3339 UTC
+}
+
+// UpdateApplyResp POST /api/update/apply 响应（异步已启动）。
+type UpdateApplyResp struct {
+	Started bool   `json:"started"`
+	ApplyID string `json:"apply_id"`
 }
 
 // ---- POST /api/on | /api/off ----

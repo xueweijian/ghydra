@@ -239,6 +239,7 @@ func newSelfupdateUpdater(dbPath, cdn, apiBase string, trustHosts map[string]boo
 		InstallDir:       filepath.Dir(self),
 		StatePath:        sp,
 		Files:            installFiles(),
+		Variant:          buildVariant, // P4/D7：gui 构建寻址 -gui 资产
 		Daemon:           daemonControlProd{dbPath: dbPath, selfPath: self},
 		SelfCheckTimeout: 30 * time.Second, // Defender 扫新 exe 可超 10s 默认值
 		Log:              log.Printf,
@@ -261,6 +262,7 @@ func newBootUpdater(dbPath string) *selfupdate.Updater {
 		InstallDir: filepath.Dir(self),
 		StatePath:  sp,
 		Files:      installFiles(),
+		Variant:    buildVariant,
 		Daemon:     daemonControlProd{dbPath: dbPath, selfPath: self},
 		Log:        log.Printf,
 	}
@@ -278,8 +280,11 @@ func bootSelfUpdate(dbPath string, inServe bool) {
 }
 
 // versionCmd `ghydra version`（自更新自检的子进程契约：输出含版本串）。
+// D8：附 update 引导（静态文案——本命令必须快，不做网络 check；
+// BootHook selfCheck 的子进程解析只匹配版本子串，多余行无害）。
 func versionCmd(args []string) {
 	fmt.Printf("ghydra version %s\n", Version)
+	fmt.Println("检查更新: ghydra update check（--pre 含预发布）")
 }
 
 // updateCmd `ghydra update [check|rollback]`。
