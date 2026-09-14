@@ -87,9 +87,9 @@ ghydra update [--pre] [--allow-downgrade]
   5. swap + 重启编排（§2.2/2.5）
 ```
 
-**密钥**：新 ed25519 钥匙对（与 rules 钥匙分离——规则信任与二进制信任职责分离，泄露互不殃及）。私钥离线（shared/ghydra-keys/ghydra-release.key，同 W2 纪律），公钥冻结 `engine/selfupdate/keys.go`；签名工具 `scripts/sign-release`（复用 sign-rules 的 minisign 签名实现，抽公共代码）。CI 只验不签。
+**密钥**：新 ed25519 钥匙对（与 rules 钥匙分离——规则信任与二进制信任职责分离，泄露互不殃及）。私钥离线（shared/ghydra-keys/ghydra-release.key，同 W2 纪律），公钥冻结 `engine/selfupdate/keys.go`；签名工具 `engine/cmd/sign-release`（复用 internal/minisign 签名实现；W4p2 P3 落地）。CI 只验不签。
 
-**发布流程**：tag push → CI 出四平台产物 + checksums.txt（Release 无 minisig 不可更新态）→ 维护者本地 `scripts/sign-release` → `gh release upload checksums.txt.minisig` → 更新通道生效。
+**发布流程**：tag push → CI 出四平台产物 + checksums.txt（Release 无 minisig 不可更新态）→ 维护者本地 `engine/cmd/sign-release` → `gh release upload checksums.txt.minisig` → 更新通道生效。
 
 ### 2.5 重启编排
 

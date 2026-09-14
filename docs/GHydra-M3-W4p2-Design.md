@@ -98,7 +98,7 @@ push tag v* → build(3平台×产物, ldflags) → NSIS(linux交叉免,win原�
 
 - 产物命名/布局 golden 锁定（测试断言 release 清单结构，防 selfupdate 下载路径漂移）。
 - selfupdate 期望的布局（W4p1 已定）与 release 产物**同名同构**——`ghydra update` 直接吃自家 Release。
-- **签名流程（拍板点 §8-1）**：推荐 CI 出包到 Release draft → 沙箱/本地用 `shared/ghydra-keys` 私钥跑 `scripts/sign-release`（复用 sign-rules 的 ED 签名逻辑）→ 上传 `checksums.txt.minisig` + 每产物 `.minisig` → publish。私钥永不出用户设备/沙箱，CI 零 secret。
+- **签名流程（拍板点 §8-1）**：推荐 CI 出包到 Release draft → 沙箱/本地用 `shared/ghydra-keys` 私钥跑 `engine/cmd/sign-release`（复用 internal/minisign 的 ED 签名逻辑）→ 上传 `checksums.txt.minisig` + 每产物 `.minisig` → publish。私钥永不出用户设备/沙箱，CI 零 secret。
 
 ### D6 flags 持久化：SQLite config 表
 

@@ -2,7 +2,7 @@ name: release
 
 # W4p2 D5：tag 驱动全链路出包。
 #   push tag v* → 交叉构建（package.sh 单一事实源）+ 原生 NSIS + 原生 mac gui
-#   → checksums.txt → **draft Release** → 通知本地签名（scripts/sign-release，
+#   → checksums.txt → **draft Release** → 通知本地签名（engine/cmd/sign-release，
 #   私钥永不出用户侧/沙箱——拍板 §8-1，CI 零 secret）。
 #
 # 产物命名契约（selfupdate SelectAsset 前缀 ghydra-<goos>-<goarch>.）见
@@ -125,13 +125,13 @@ z.close()"
           gh release create "${{ github.ref_name }}" \
             --draft \
             --title "GHydra ${{ github.ref_name }}" \
-            --notes "自动构建（draft）。签名后发布：scripts/sign-release -key ... -tag ${{ github.ref_name }} -publish" \
+            --notes "自动构建（draft）。签名后发布：engine/cmd/sign-release -key ... -tag ${{ github.ref_name }} -publish" \
             dist/*
       - name: 签名提示（人工步骤，私钥不出用户侧）
         run: |
           echo "============================================================"
           echo " draft Release 就绪。收尾（本地/沙箱执行）："
-          echo "   GH_TOKEN=xxx go run ./scripts/sign-release \\"
+          echo "   GH_TOKEN=xxx go run ./engine/cmd/sign-release \\"
           echo "     -key shared/ghydra-keys/ghydra-release.key \\"
           echo "     -tag ${{ github.ref_name }} -publish"
           echo "============================================================"
