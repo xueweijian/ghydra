@@ -51,8 +51,10 @@ func newUpdateRunnerFrom(u *selfupdate.Updater, onDone func()) *updateRunner {
 }
 
 // newUpdateRunner 生产装配：serve 内构造 updater（失败返回 nil）。
-func newUpdateRunner(dbPath, cdn string, onDone func(), logf func(string, ...any)) *updateRunner {
-	u, err := newSelfupdateUpdater(dbPath, cdn, "", nil)
+// apiBase/trustHosts：--update-api/--update-trust-host 旗标透传（冒烟/
+// 演练用；生产默认空 = 官方源 + 冻结信任域，行为零变化）。
+func newUpdateRunner(dbPath, cdn, apiBase string, trustHosts map[string]bool, onDone func(), logf func(string, ...any)) *updateRunner {
+	u, err := newSelfupdateUpdater(dbPath, cdn, apiBase, trustHosts)
 	if err != nil || u == nil {
 		if logf != nil {
 			logf("[update] runner 不可用: %v", err)
@@ -60,12 +62,6 @@ func newUpdateRunner(dbPath, cdn string, onDone func(), logf func(string, ...any
 		return nil
 	}
 	return newUpdateRunnerFrom(u, onDone)
-}
-
-// newServeUpdater 生产 updater（ServeMode 由 From 补齐；独立导出便于
-// 装配层日志可读）。
-func newServeUpdater(dbPath, cdn string) (*selfupdate.Updater, error) {
-	return newSelfupdateUpdater(dbPath, cdn, "", nil)
 }
 
 func (r *updateRunner) now() string { return time.Now().UTC().Format(time.RFC3339) }

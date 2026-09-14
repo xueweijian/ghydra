@@ -222,7 +222,7 @@ func newTestRunner(t *testing.T) *updateRunner {
 	t.Helper()
 	// updater 不可用的环境（StatePath 空）也必须给 idle 兜底——503 面
 	// 由 nil runner 表达（装配层），runner 本身永不 nil panic。
-	r := newUpdateRunner("", "", nil, t.Logf)
+	r := newUpdateRunner("", "", "", nil, nil, t.Logf)
 	if r != nil {
 		t.Cleanup(func() {})
 	}

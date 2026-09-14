@@ -158,7 +158,6 @@ func spawnServeAt(self string, dbPath string) (int, error) {
 	if dbPath != "" {
 		args = append(args, "--db", dbPath)
 	}
-	args = append(args, "--managed")
 	cmd := exec.Command(self, args...)
 	cmd.SysProcAttr = detachAttr() // 平台差异见 spawn_{windows,unix}.go
 	// 托管 serve 的输出落盘（append）：detached 子进程默认 /dev/null——

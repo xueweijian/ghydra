@@ -367,13 +367,15 @@ func firstLine(s string) string {
 }
 
 // trustHostMap 逗号分隔 host → 白名单 map（空串 = nil = 冻结默认）。
+// 小写归一：hostAllowed 按 u.Hostname() 原样匹配，host 大小写不敏感
+// （RFC 3986），必须在解析边界归一，否则大写域漏白名单。
 func trustHostMap(s string) map[string]bool {
 	if s == "" {
 		return nil
 	}
 	m := map[string]bool{}
 	for _, h := range strings.Split(s, ",") {
-		if h = strings.TrimSpace(h); h != "" {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
 			m[h] = true
 		}
 	}

@@ -240,6 +240,8 @@ func serveCmd(args []string) {
 	dialOverride := fs.String("dial-override", "", "host=ip[,host=ip…] 强制上游拨号 IP（演练/镜像映射）")
 	apiToken := fs.String("api-token", "", "本机 API token（显式注入；默认读/建 ~/.ghydra/api-token，M3-W1）")
 	apiTokenFile := fs.String("api-token-file", "", "token 文件路径（覆盖默认位置）")
+	updateAPI := fs.String("update-api", "", "Releases API 覆盖（自更新冒烟/演练用；默认官方源）")
+	updateTrust := fs.String("update-trust-host", "", "额外信任资产域（逗号分隔，演练用；sha256+minisign 仍强制）")
 	guiDist := fs.String("gui-dist", "", "前端面板目录（空 = exe 旁 dist/ 自动探测；不存在则不启面板）")
 	_ = fs.Parse(reorderFlags(args, "scheduler", "managed"))
 
@@ -432,7 +434,7 @@ func serveCmd(args []string) {
 	}
 	// P4/D7：serve 内自更新状态机（两段式第一段）。不可用 = nil（/api/update 503 面）。
 	var updateRun *updateRunner
-	updateRun = newUpdateRunner(*dbPath, cdnFn(), func() {
+	updateRun = newUpdateRunner(*dbPath, cdnFn(), *updateAPI, trustHostMap(*updateTrust), func() {
 		// apply 成功 → pending_boot → 优雅退出；继任由 GUI 壳拉起（D1），
 		// CLI 场景由用户重跑 ghydra on（退出 hook 恢复代理不留半接管态）。
 		log.Printf("[update] v%s 更新就绪，优雅退出等待继任", updateRun.Status().Target)

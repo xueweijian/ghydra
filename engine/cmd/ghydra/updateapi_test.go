@@ -183,3 +183,40 @@ func TestUpdateRunnerNilUpdater(t *testing.T) {
 		t.Fatal("nil updater 应返回 nil runner（503 面）")
 	}
 }
+
+// P4c-1：serve 装配 override 透传——--update-api/--update-trust-host 必须落
+// 到 updater（冒烟 fake Release server 的依赖；生产默认空 = 行为零变化）。
+func TestNewUpdateRunnerOverride(t *testing.T) {
+	const apiBase = "http://127.0.0.1:19711/repo"
+	r := newUpdateRunner("", "", apiBase, map[string]bool{"127.0.0.1": true}, nil, t.Logf)
+	if r == nil {
+		t.Fatal("override 装配不应返回 nil")
+	}
+	defer func() { r.updater = nil }()
+	if r.updater.APIBase != apiBase {
+		t.Fatalf("APIBase 未透传: got %q want %q", r.updater.APIBase, apiBase)
+	}
+	if !r.updater.TrustedHosts["127.0.0.1"] {
+		t.Fatal("TrustedHosts 未透传")
+	}
+	if !r.updater.ServeMode {
+		t.Fatal("ServeMode 必须为 true（两段式：runner 不编排 daemon）")
+	}
+	if r.updater.OnPhase == nil {
+		t.Fatal("OnPhase 未接线（SSE 进度帧依赖）")
+	}
+	// ServeMode 语义由 selfupdate 包 TestApplyServeModePendingBoot 锁定
+	// （Daemon 字段保留但 ApplyPlan 在 ServeMode 下旁路编排——两段式
+	// 「daemon 不 Stop 自己」防自杀契约）。
+}
+
+// P4c-1：trustHostMap 解析（updateCmd 与 serve 旗标共用）。
+func TestTrustHostMap(t *testing.T) {
+	if m := trustHostMap(""); m != nil {
+		t.Fatalf("空串应返回 nil（冻结默认），got %v", m)
+	}
+	m := trustHostMap("Mirror.Example.com, 127.0.0.1")
+	if len(m) != 2 || !m["mirror.example.com"] || !m["127.0.0.1"] {
+		t.Fatalf("解析/小写归一不符: %v", m)
+	}
+}
