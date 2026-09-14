@@ -65,11 +65,22 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
 export const getStatus = () => apiFetch<import("../types").ApiStatus>("/api/status");
 export const getConfig = () => apiFetch<import("../types").ApiConfig>("/api/config");
+export const setConfig = (patch: import("../types").ConfigPatch) =>
+  apiFetch<import("../types").ConfigSetResp>("/api/config", {
+    method: "POST",
+    body: JSON.stringify(patch),
+  });
 export const setCDN = (cdn: string) =>
   apiFetch<import("../types").ApiConfig>("/api/config", {
     method: "POST",
     body: JSON.stringify({ cdn }),
   });
+
+// P4/D7 自更新三件套（updateRunner nil = 503，卡片按不支持降级）。
+export const updateCheck = () => apiFetch<import("../types").UpdateInfo>("/api/update/check");
+export const updateApply = () =>
+  apiFetch<import("../types").UpdateApplyResp>("/api/update/apply", { method: "POST" });
+export const updateStatus = () => apiFetch<import("../types").UpdateStatus>("/api/update/status");
 export const systemOn = (mode: "pac" | "proxy" = "pac") =>
   apiFetch<{ ok: boolean; mode: string }>("/api/on", { method: "POST", body: JSON.stringify({ mode }) });
 export const systemOff = (shutdown = false) =>

@@ -18,6 +18,8 @@ import type {
   DoctorFrame,
   GetTask,
   HelloFrame,
+  UpdateInfo,
+  UpdateStatus,
 } from "../types";
 
 import goldenStatus from "../../../../../engine/api/testdata/golden/status.json";
@@ -32,6 +34,7 @@ import goldenDoctorFrame from "../../../../../engine/api/testdata/golden/sse_doc
 import goldenGetFrame from "../../../../../engine/api/testdata/golden/sse_get.json";
 import goldenHello from "../../../../../engine/api/testdata/golden/sse_hello.json";
 import goldenRules from "../../../../../engine/api/testdata/golden/rules_snapshot.json";
+import goldenUpdateStatus from "../../../../../engine/api/testdata/golden/update_status.json";
 
 describe("golden ↔ types.ts 契约锁定", () => {
   it("status.json 满足 ApiStatus", () => {
@@ -118,5 +121,29 @@ describe("golden ↔ types.ts 契约锁定", () => {
   it("sse_hello.json 满足 HelloFrame", () => {
     const h: HelloFrame = goldenHello as HelloFrame;
     expect(h.proto).toBe(1);
+  });
+
+  // P4c：p4b Go 侧 golden 的前端欠账补齐（update_status.json 自 W4p2
+  // p4b 就存在，TS 类型此前从未锁定）。
+  it("update_status.json 满足 UpdateStatus", () => {
+    const u: UpdateStatus = goldenUpdateStatus as UpdateStatus;
+    expect(u.state).toBe("downloading");
+    expect(u.current).toBe("1.0.0");
+    expect(u.target).toBe("1.0.1");
+    expect(u.progress_pct).toBeCloseTo(42.5);
+    expect(u.updated_at).toBe("2026-09-14T00:00:01Z");
+  });
+
+  it("UpdateInfo 形状（check 响应字段子集，无独立 golden——由 UpdateStatus+smoke 覆盖）", () => {
+    const info: UpdateInfo = {
+      current: "1.0.0",
+      latest: "1.0.1",
+      has_update: true,
+      notes: "changelog",
+      html_url: "https://github.com/x/y/releases/tag/v1.0.1",
+      checked_at: "2026-09-14T00:00:00Z",
+      cached: false,
+    };
+    expect(info.has_update).toBe(true);
   });
 });

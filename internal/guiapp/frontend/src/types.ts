@@ -43,6 +43,33 @@ export interface ApiStatus {
   cdn?: string;
   rules: RulesStatus;
   takeover: TakeoverState;
+  update?: UpdateStatus; // P4c：自更新状态机（nil = idle/未装配不推）
+}
+
+// P4/D7 自更新（engine/api/dto.go 对齐；golden update_status.json 锁定）。
+export interface UpdateInfo {
+  current: string;
+  latest?: string;
+  has_update: boolean;
+  notes?: string;
+  html_url?: string;
+  checked_at: string;
+  cached: boolean;
+  error?: string;
+}
+
+export interface UpdateStatus {
+  state: string; // idle|checking|downloading|verifying|swapping|pending_boot|failed
+  current: string;
+  target?: string;
+  progress_pct?: number;
+  error?: string;
+  updated_at: string;
+}
+
+export interface UpdateApplyResp {
+  started: boolean;
+  apply_id: string;
 }
 
 // W3c：git/ssh 集成状态（GET /api/git|ssh/status）。
