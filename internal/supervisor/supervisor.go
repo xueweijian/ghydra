@@ -57,6 +57,7 @@ type State struct {
 	Phase   string // starting|running|pending|restarting|updated|stopped|failed
 	Version string // 探活到的 daemon 版本（空 = 未知）
 	Pending string // update.json 待生效版本（空 = 无）
+	Port    int    // serve.json 声明端口（0 = 未知）
 }
 
 // Config 装配（零值字段用默认值；显式注入，零全局）。
@@ -85,6 +86,7 @@ type Loop struct {
 type probeResult struct {
 	alive   bool
 	version string
+	port    int
 }
 
 // New 构造（ExePath 空 = panic：预捕获是调用方契约，晚爆不如早爆）。
@@ -144,7 +146,7 @@ func (l *Loop) Step(startup bool) State {
 		if pend != "" {
 			phase = "pending" // apply 进行中（downloading…pending_boot）
 		}
-		return l.emit(State{Phase: phase, Version: p.version, Pending: pend})
+		return l.emit(State{Phase: phase, Version: p.version, Pending: pend, Port: p.port})
 	}
 
 	if !startup && pend == "" {
@@ -156,7 +158,7 @@ func (l *Loop) Step(startup bool) State {
 		l.logf("spawn 失败（pending=%q）: %v", pend, err)
 		return l.emit(State{Phase: "failed", Pending: pend})
 	}
-	v, ok := l.waitHealthy()
+	hp, ok := l.waitHealthy()
 	if !ok {
 		l.logf("继任 %s 内未探活（pending=%q）——放弃本轮，等待下轮再判", l.cfg.HealthyWait, pend)
 		return l.emit(State{Phase: "failed", Pending: pend})
@@ -165,7 +167,7 @@ func (l *Loop) Step(startup bool) State {
 	if pend != "" {
 		phase = "updated" // 继任 BootHook 已 Confirm 新版
 	}
-	return l.emit(State{Phase: phase, Version: v, Pending: pend})
+	return l.emit(State{Phase: phase, Version: hp.version, Pending: pend, Port: hp.port})
 }
 
 // Run 阻塞监督循环（startup 首轮 + ticker 观察轮；ctx 取消退出）。
@@ -184,14 +186,14 @@ func (l *Loop) Run(ctx context.Context) {
 }
 
 // waitHealthy 轮询探活直至存活或 HealthyWait 耗尽。
-func (l *Loop) waitHealthy() (string, bool) {
+func (l *Loop) waitHealthy() (probeResult, bool) {
 	deadline := time.Now().Add(l.cfg.HealthyWait)
 	for {
 		if p := l.probeFn(); p.alive {
-			return p.version, true
+			return p, true
 		}
 		if !time.Now().Before(deadline) {
-			return "", false
+			return probeResult{}, false
 		}
 		time.Sleep(l.cfg.ProbeWait)
 	}
@@ -247,21 +249,42 @@ func (l *Loop) probeFiles() probeResult {
 		Version string `json:"version"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&body) // 解析失败也算活
-	return probeResult{alive: true, version: body.Version}
+	return probeResult{alive: true, version: body.Version, port: st.Port}
 }
 
-// readToken 读 api-token（daemon 自建自管；壳只读。空 = 未生成，探活
-// 仍发无凭据请求——401 也算活）。
-func (l *Loop) readToken() string {
-	if l.cfg.Dir == "" {
+// ReadServePort serve.json 声明的端口（0 = 未运行态）。guiapp 注入
+// webview 用；壳只读运行态，真相归 serve。
+func ReadServePort(dir string) int {
+	if dir == "" {
+		return 0
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "serve.json"))
+	if err != nil {
+		return 0
+	}
+	var st serveState
+	if json.Unmarshal(b, &st) != nil {
+		return 0
+	}
+	return st.Port
+}
+
+// ReadToken api-token 文件内容（trim；空 = 未生成）。壳只读——token
+// 生命周期归 serve（LoadOrCreateToken），壳绝不创建。
+func ReadToken(dir string) string {
+	if dir == "" {
 		return ""
 	}
-	b, err := os.ReadFile(filepath.Join(l.cfg.Dir, "api-token"))
+	b, err := os.ReadFile(filepath.Join(dir, "api-token"))
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(b))
 }
+
+// readToken 读 api-token（daemon 自建自管；壳只读。空 = 未生成，探活
+// 仍发无凭据请求——401 也算活）。
+func (l *Loop) readToken() string { return ReadToken(l.cfg.Dir) }
 
 // pendingFile update.json 待生效版本（p4b 两段式契约：PendingVersion
 // 非空且未 Confirmed；BootHook Confirm 后自动清零）。
