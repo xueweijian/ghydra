@@ -195,13 +195,14 @@ jobs:
           test -f ghydra-windows-amd64-setup.exe
       - name: /S 静默安装 + PATH/AppPaths 断言
         run: |
-          # MSYS 坑：git-bash 把 /S 转成路径 → 安装器进 GUI 向导永久卡死
-          # （首跑实证 19min 挂起）。用 powershell Start-Process 传原生 /S
+          # MSYS 坑×2：git-bash 会把 /S、/v 等「斜杠开头参数」转成 Windows
+          # 路径——安装器进 GUI 卡死（首跑 19min 挂起）、reg query 语法崩
+          # （次跑 Invalid syntax）。安装与注册表断言全走 powershell 原生
           # ——与本地真机验证完全同构。
           powershell -NoProfile -Command 'Start-Process -FilePath "$PWD\ghydra-windows-amd64-setup.exe" -ArgumentList "/S" -Wait'
           sleep 3
-          reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path | grep -i "GHydra" || { echo "FAIL: HKLM PATH 无 GHydra"; exit 1; }
-          reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ghydra.exe" >/dev/null || { echo "FAIL: App Paths 键缺失"; exit 1; }
+          powershell -NoProfile -Command '(Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment").Path' | grep -i "GHydra" || { echo "FAIL: HKLM PATH 无 GHydra"; exit 1; }
+          powershell -NoProfile -Command 'Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ghydra.exe"' | grep -qi true || { echo "FAIL: App Paths 键缺失"; exit 1; }
       - name: 全新进程解析 ghydra（广播后新 PATH）
         run: |
           powershell -NoProfile -Command '$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User"); (Get-Command ghydra -ErrorAction Stop).Source' | grep -i ghydra
@@ -210,8 +211,8 @@ jobs:
         run: |
           powershell -NoProfile -Command 'Start-Process -FilePath "C:\Program Files\GHydra\uninstall.exe" -ArgumentList "/S" -Wait'
           sleep 3
-          if reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path | grep -i "GHydra"; then echo "FAIL: PATH 残留"; exit 1; fi
-          if reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ghydra.exe" >/dev/null 2>&1; then echo "FAIL: App Paths 残留"; exit 1; fi
+          if powershell -NoProfile -Command '(Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment").Path' | grep -i "GHydra"; then echo "FAIL: PATH 残留"; exit 1; fi
+          if powershell -NoProfile -Command 'Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ghydra.exe"' | grep -qi true; then echo "FAIL: App Paths 残留"; exit 1; fi
           test ! -d "/c/Program Files/GHydra" || { echo "FAIL: 目录残留"; exit 1; }
 
   # W3：Worker 模板验证（沙箱禁 npm，node_modules 只活在 CI）。
