@@ -174,7 +174,7 @@ jobs:
   # 卸载 → PATH 条目精确消失。gui exe 用 stub dist 构建即可（PATH 测试
   # 不开面板；index.html 断言属 release.yml 职责）。
   nsis-path:
-    runs-on: windows-latest
+    runs-on: windows-2022 # NSIS 预装镜像（与 release.yml windows-gui 一致；windows-latest 无 makensis——首跑实证）
     defaults:
       run:
         shell: bash
