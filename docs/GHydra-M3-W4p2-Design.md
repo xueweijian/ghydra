@@ -192,6 +192,80 @@ push tag v* → build(3平台×产物, ldflags) → NSIS(linux交叉免,win原�
 - config 表 + 合并优先级 + /api/config 扩展 + /api/update/* + SSE + Settings 页 + 托盘 tooltip。
 - **退出**：L1 优先级矩阵 + L2 fake-release 端到端（check→apply→pending→boot）+ GUI 真机渲染走查（W3 方法论）+ golden 双端。
 
+> ### P4 实施规划（2026-09-14 落盘，测试计划冻结）
+>
+> **现状盘点**（读码结论）：
+> - serve flags 全集在 `main.go serveCmd`；`POST /api/config` 仅 cdn 热更（ConfigPatch{CDN}）；
+> - `spawnServe`（ghydra on 拉起）硬编码传 `--listen 127.0.0.1:port --doctor-interval 1h --managed`；
+> - store 有 `schemaExtras` 追加 DDL 钩子（rules_state.go 为范本）；
+> - selfupdate.Updater 无 variant 概念（gui 二进制 check 会按前缀误选 CLI 归档——W4p1 遗留）；
+> - Refresher 无 SetURL/SetInterval（rules_url/interval 热更需改内部循环）；
+> - 双 v 根源：release.yml/package.sh 注入 `main.Version=tag`（含 v）+ 展示层 `v%s`。
+>
+> **D6 细化**：
+> - `config(key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER)`，随 schemaExtras 注册（`store/config.go`）；
+> - key 集：`cdn` / `rules_url` / `rules_interval`（Go duration 串）/ `listen` / `doctor_interval`；
+> - 合并优先级：**flag.Visit 判显式 > 持久化值 > 默认**；`spawnServe` **不再传 --doctor-interval**——
+>   改为 serve 内部规则：**managed 模式下 doctor-interval 默认 1h**（保持首启行为不变）；
+> - `/api/config` 扩展（ConfigPatch 加 4 字段）：`cdn` 热更（现状）；其余写表 + 响应带
+>   `requires_restart: [...]`（**P4 不做 refresher 热更 API**——改内部 tick 循环的 risk 大于收益，
+>   rules_url 日常用户不动）；**改 listen 时校验回环地址**（安全模型不变：仅 127.0.0.1）；
+> - CLI `ghydra config set|get|list`（直接写表，提示重启生效）；
+> - GUI Settings「运行参数」区从只读改可编辑（cdn/rules_url/interval/doctor），保存后显示
+>   「重启 daemon 生效」徽章（v1.0 不做自动重启按钮——off{shutdown} 会撤接管，语义不匹配）。
+>
+> **D7 细化（关键架构决策——serve 内 apply 的自重启死结）**：
+> - `ghydra update apply`（CLI，外部进程编排 Stop→swap→Start）W4p1 已测绿，**保持不动**；
+> - **serve 内 apply**：daemon 进程内不能编排自己的 Stop/Start（Stop=自杀，后续步骤死掉）。
+>   定案**两段式**：
+>   ① daemon 内：Check→下载→验签→swap（rename 对运行中进程安全，W4p1 实证）→写 pending
+>     状态→SSE 推 `pending-boot`→**优雅退出**（shutdownCh，managed 退出 hook 恢复系统代理）；
+>   ② **继任拉起归 GUI 壳**（D1 hybrid 本义：壳是 daemon 的 supervisor）——壳 watch daemon
+>     死亡 + update.json pending → spawn 自身 exe `serve --managed` → 轮询 /api/status 直到
+>     新版本起来（BootHook 自检→Confirm）→ 显示「已更新到 vX」。
+>   CLI-only 用户路径不变：`ghydra update apply`（外部编排）或重启后 `ghydra on`。
+> - **端点**：`GET /api/update/check`（同步 + 5min 内存缓存，`cached` 标记）/
+>   `POST /api/update/apply`（异步单飞 409，语义同 rules refresh）/ `GET /api/update/status`
+>   （状态机快照）；
+> - **状态机**（SSE status 帧新增 `update` 子对象，复用 1s diff 通道）：
+>   `idle → checking → downloading → verifying → swapping → pending-boot`；
+>   `checking → uptodate`（无更新）；任意态 → `failed`（带 error 串）；
+> - **variant 寻址**（W4p1 遗留收口）：Updater 加 `Variant string`（""=CLI / "gui"）；
+>   release.yml 构建 gui 变体时 `-X main.buildVariant=gui`（package.sh 参数化）；
+>   SelectAsset variant=gui 时前缀改 `ghydra-<goos>-<goarch>-gui.`（darwin-amd64 无 gui 资产
+>   → 清晰报错）；gui zip 根级单文件与 Files=[ghydra(.exe)] 自洽（P3 已定型）；
+> - **双 v 修复**：package.sh `VER="${1#v}"` strip + main.go init normalize（TrimPrefix 防手滑）。
+>
+> **D8 细化**：
+> - `ghydra version` 加静态提示行「检查更新: ghydra update check」——**不做网络 check**
+>   （version 是 BootHook 自检子进程契约，必须快）；
+> - pending-boot 托盘 tooltip：壳从 SSE update 帧取态，pending 时
+>   `SetTooltip("GHydra — 更新已安装，重启后生效")`。
+>
+> **P4 内部拆步（串行）**：
+> - **p4a D6 落地**：store/config.go + serve 合并 + spawnServe 去 flag + /api/config 扩展 +
+>   CLI config 子命令 + golden（config.json 扩展）；
+> - **p4b D7 后端**：variant + 双 v + /api/update/* + SSE update 帧 + serve 内 updater 装配 +
+>   apply→pending→退出链路 + golden（update_status.json + status.json 增 update）；
+> - **p4c D7 前端 + D8**：Settings 更新卡片（版本/检查/进度/重启按钮态）+ 壳 supervisor 拉起 +
+>   托盘 tooltip + version 提示行 + smoke_w4p2_p4.sh + GUI 渲染走查。
+>
+> **P4 测试计划（冻结，先于实现）**：
+> | 层 | 对象 | 用例 |
+> |---|---|---|
+> | L1 | flags 合并 | 显式>持久化>默认 5 key × 3 来源全排列；flag.Visit 判显式；managed 下 doctor 默认 1h |
+> | L1 | config 表 | Set/Get 幂等、updated_at 单调、坏 duration 拒绝 |
+> | L1 | SelectAsset variant | gui 前缀命中/CLI 不误选 gui 资产/darwin-amd64+gui 报错 |
+> | L1 | semver 展示 | 双 v normalize（v 前缀注入后输出单 v） |
+> | L2 | /api/config | cdn 热更即时生效；rules_url 写表+requires_restart；listen 非回环拒绝 |
+> | L2 | /api/update/check | fake release：正常/无更新（uptodate）/5min 缓存命中（cached=true） |
+> | L2 | /api/update/apply | 单飞 409；状态机全转移（idle→…→pending-boot）；失败态带 error |
+> | L2 | apply 退出链 | fake release 端到端：apply→swap→pending 写盘→serve 优雅退出 |
+> | L2 | 持久化重启 | POST /api/config 设 cdn/listen → kill serve → 重拉 → 新值生效 |
+> | L2 | golden 双端 | config.json/update_status.json/status.json(update 字段) ↔ types.ts |
+> | L3 smoke | p4 全链路 | smoke_w4p2_p4.sh：config set→重启生效 + update apply 端到端 + version 提示 |
+> | L3 真机 | GUI 渲染 | Settings 更新卡片/进度/重启拉起 走查（W3 方法论：serve --gui-dist 截图） |
+
 ### P5 v1.0 收官
 - CHANGELOG + README 发布态（安装教学/信任教学/更新教学）；`v1.0.0` tag → 发布；**用户 Windows 真机验收清单**（§7）。
 - **退出**：验收清单全过 + 真机更新演练（v1.0.0→v1.0.1 假版本，走完 apply→boot→confirmed，再 rollback 演练一次）。
