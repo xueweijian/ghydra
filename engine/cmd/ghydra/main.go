@@ -76,6 +76,8 @@ func main() {
 		benchCmd(os.Args[2:])
 	case "doctor":
 		doctorCmd(os.Args[2:])
+	case "diag":
+		diagCmd(os.Args[2:])
 	case "poc":
 		pocCmd(os.Args[2:])
 	case "loadtest":
@@ -126,6 +128,7 @@ func usage() {
   ghydra version                                     版本（自更新自检契约）
   ghydra update [check|rollback] [--pre] [--allow-downgrade]  自更新（永不自毁）
   ghydra doctor [--mode direct|proxy|both]          六场景探针+直连对照+分类报告
+  ghydra diag [--days N] [--out 文件.zip]            脱敏诊断包（token/凭据/家目录剔除）
   ghydra bench [--mode bootstrap|direct|proxy]     自举链或六域名存活报告
   ghydra poc [--listen ADDR] [--rewrite-sni N]      裸 SNI 转发器（调试工具）
   ghydra loadtest [--mode sni|connect] [--concurrency N] [--rounds M]  并发压测

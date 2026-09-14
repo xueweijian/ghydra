@@ -151,6 +151,20 @@ push tag v* → build(3平台×产物, ldflags) → NSIS(linux交叉免,win原�
 - engine/diag + Redact + zip 组装 + 泄漏扫描测试 + `ghydra diag` 子命令 + doctor 集成（排障一键化）。
 - **退出**：L1 表驱动 + L2 泄漏扫描（植入 token 0 命中）+ smoke（真跑一次 diag 断言 zip 结构）。
 
+> **实施记录（2026-09-14，本地全绿后 push）**：
+> - `engine/diag`：`Redact`（URL 凭据/Authorization/token 键值对/裸 32 hex/家目录→~/用户名→<user>；
+>   **RE2 无 lookbehind/lookahead**——用户名用 \b 词边界、32hex 用捕获组兜两侧防 40hex sha 误伤）+
+>   `Build`（entry 名稳定排序输出可复现）。
+> - **双防线**：①Redact 正则 ②`Secrets` 精确串扫描——**必须在压缩前明文 entry 上做**
+>   （zip deflate 会打散明文，压缩后字节扫描漏报）；命中即报错拒导（`TestBuildRejectsUnredactableSecret`）。
+> - `ghydra diag`：store（doctor 汇总/接管**存在性**，绝不读快照原值）+ serve.json 端口事实源
+>   （fetchStatusJSON ?token=，token 只用于本机请求不写包）+ serve.log 尾 200 行 + selfupdate 摘要；
+>   裸环境不崩（首次安装报障场景）；api-token 原文只作扫描基准。
+> - 泄漏扫描测试三件套：`TestLeakScanZeroHit`（包级核心验收）/ `TestDiagCmdEndToEndLeakScan`
+>   （端到端植入）/ smoke_w4p2_diag.sh（运行时+停服+泄漏三场景，CI api-smoke job）。
+> - smoke 教训重演：serve 前台不写 serve.json（--managed 才写）——手工构造运行态（W2 同款）。
+
+
 ### P3 packaging + release.yml（D4+D5）
 - NSIS 脚本（卸载序列安全关键）；release.yml tag 驱动；产物命名 golden；`v0.9.0-rc1` tag 演练全链路（含签名脚本）。
 - **退出**：rc1 tag → Release draft 产物齐 + checksums + minisig 全链路绿 + selfupdate 从 rc1 升 rc2 演练通过（fake 或真 tag）。

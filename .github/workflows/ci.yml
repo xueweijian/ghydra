@@ -82,6 +82,8 @@ jobs:
         run: sh engine/cmd/ghydra/smoke_w1.sh
       - name: W2 phase 3 毒化矩阵黑盒（refresher×fakesite 7 场景）
         run: sh engine/cmd/ghydra/smoke_w2p3.sh
+      - name: W4p2 diag 冒烟（zip 结构 + 泄漏扫描零命中）
+        run: sh engine/cmd/ghydra/smoke_w4p2_diag.sh
 
   # W4：自更新黑盒升级演练（三平台矩阵——swap 的 Windows 文件锁路径
   # 必须在真 Windows 上证明）。真编译 v1.0.0/v1.0.1 两版二进制，
