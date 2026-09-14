@@ -195,7 +195,10 @@ jobs:
           test -f ghydra-windows-amd64-setup.exe
       - name: /S 静默安装 + PATH/AppPaths 断言
         run: |
-          ./ghydra-windows-amd64-setup.exe /S
+          # MSYS 坑：git-bash 把 /S 转成路径 → 安装器进 GUI 向导永久卡死
+          # （首跑实证 19min 挂起）。用 powershell Start-Process 传原生 /S
+          # ——与本地真机验证完全同构。
+          powershell -NoProfile -Command 'Start-Process -FilePath "$PWD\ghydra-windows-amd64-setup.exe" -ArgumentList "/S" -Wait'
           sleep 3
           reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path | grep -i "GHydra" || { echo "FAIL: HKLM PATH 无 GHydra"; exit 1; }
           reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ghydra.exe" >/dev/null || { echo "FAIL: App Paths 键缺失"; exit 1; }
@@ -205,7 +208,7 @@ jobs:
           "/c/Program Files/GHydra/ghydra.exe" version | head -1
       - name: 卸载 + 三清零断言（PATH 条目/App Paths/目录）
         run: |
-          "/c/Program Files/GHydra/uninstall.exe" /S
+          powershell -NoProfile -Command 'Start-Process -FilePath "C:\Program Files\GHydra\uninstall.exe" -ArgumentList "/S" -Wait'
           sleep 3
           if reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path | grep -i "GHydra"; then echo "FAIL: PATH 残留"; exit 1; fi
           if reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ghydra.exe" >/dev/null 2>&1; then echo "FAIL: App Paths 残留"; exit 1; fi
