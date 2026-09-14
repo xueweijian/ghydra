@@ -1,7 +1,7 @@
 # GHydra v1.0.x Dogfooding 修复方案（设计冻结稿）
 
 - 日期：2026-09-14
-- 输入：v1.0.0 Windows 真机四轮验收（Codex 2026-09-14 20:49–21:43）+ 沙箱双网络 gh-proxy 探测
+- 输入：v1.0.0 Windows 真机四轮验收（Codex 2026-09-14 20:49–21:43）+ 沙箱双网络 gh-proxy 探测 + **补充排查（22:20–22:45：GUI 空白屏根因定位 + off 生命周期缺口，已归档进四轮报告）**
 - 状态：**方案定稿，未动码**。纪律：每阶段先冻结测试计划，TDD 实现，CI 三平台绿 + Windows 复测才收官。
 - 命名：F# 为修复项编号，进 commit 前缀。
 
@@ -16,6 +16,8 @@
 | gh-proxy 下载端点双网络 403（CF 拦→应用层拦，一小时内切换）；objects 直连 4/4 OK | 默认镜像死，资产下载无降级链 | F2 |
 | 安装器不写 PATH（Machine/HKCU 均无） | 分发阻断级 UX 缺陷 | F1 |
 | web 场景 200/2.1KB/s 记 FAIL；bench 默认 bootstrap 太弱；status 无 conns；raw 域池单 IP；bench 不记 dst_ip；last_good 复用无衰减 | 可观测性/分级缺口 | F5–F10 |
+| gui 产物未嵌前端，真机窗口空白（补充排查 22:20–22:45，Windows/macOS 双平台）；下载包经 SHA256/字节核对无误 | **发布流水线漏前端构建（P0 分发阻断级）** | F11 |
+| GUI supervisor 拉起的 serve 在 `ghydra off` 后仍存活，需手动清理 | 生命周期缺口：off 清理面不覆盖壳拉起的守护 | F12 |
 
 不变量（不修）：on/off 注册表逐字段还原 4/4、零残留、SHA256 链、自更新链、doctor proxy_unreachable 语义。
 
@@ -142,14 +144,41 @@
 - 加载持久化记录时按 age 衰减：`score += min(0.3, hours×0.02)`；age > 24h → 强制重验（并入 F3 预热）。
 - 防长期陈旧记录在 IP 质量漂移后仍被信任。
 
+## F11（P0）发布流水线漏前端构建（GUI 空白屏）
+
+**问题**：v1.0.0 gui 变体产物（windows-amd64-gui.zip / setup.exe / darwin-arm64-gui.zip）未嵌入前端资源。真机 `ghydra gui` 可拉起窗口（Wails v3.0.0-beta.20 / WebView2 正常，supervisor 正常拉起 serve），但日志持续报错、窗口空白：
+```
+ERR [AssetFileServerFS] Unable to handle request url=/ err=no `index.html` could be found in your Assets fs.FS
+```
+两次启动（22:22、22:24）均复现。补充排查（22:28–22:45）证明**下载包无误**（三个包字节 数/SHA256 与 checksums.txt 全一致；三包均单二进制、按设计前端应 go:embed 进去）——是发布构建缺陷，非分发/下载缺陷，Windows 与 macOS 双平台同病。
+
+**根因**：`release.yml` 三个 GUI 构建点（crossbuild 的 windows-amd64-gui 变体、windows-gui、mac-gui）全部裸 `go build -tags gui`，没有任何前端构建步骤；`internal/guiapp/gui.go` 的 `//go:embed all:frontend/dist` + 已入库的 `dist/.gitkeep` stub 让空 dist 静默编译通过——**「前端缺失」在这个设计下永远不是编译错误，只在运行期表现为白屏**。`ci-gui.yml` 已有正确链路（frontend job → upload-artifact → 三平台 download → `go build -tags gui`），release.yml 漏抄。
+
+**方案**：
+1. release.yml 新增 `frontend` job：ubuntu + node 22 + `npm ci && npm run build && npx vitest run`（working-directory `internal/guiapp/frontend`）→ upload-artifact `frontend-dist`；
+2. `crossbuild` / `windows-gui` / `mac-gui` 三 job `needs: frontend` + download-artifact 到 `internal/guiapp/frontend/dist`；
+3. **防回归断言**：三处 GUI 构建步骤与 `scripts/package.sh` 的 gui 变体在构建前 `test -f internal/guiapp/frontend/dist/index.html`，缺失即 fail——stub 设计不废除（默认构建免 npm 的特性保留），断言放在打包层。
+
+**测试计划**：
+- CI：rc tag 演练 release 全链，断言 8 产物数量红线不变 + gui 产物体积显著大于空壳基线（17,203,200 B → 应 +前端 dist 体积）；
+- 真机：安装/解包 CI 产物跑 `ghydra gui`，确认面板渲染（六页面 + SSE 接线）。
+
+**后续项（排 v1.1.0，本次不做）**：serve 浏览器兜底模式（exe 旁 `dist/`）在 NSIS 单文件安装下同样无面板——改为 gui 变体构建时 serve 静态托管优先读 embed FS；`gui/` 遗留独立 module（go.mod + 孤儿 icon.png）清理。
+
+## F12（P1.5）`ghydra off` 不杀 supervisor 拉起的 serve
+
+**问题**：GUI supervisor 拉起的 serve 子进程（22:25:15 启动）在 `ghydra off` 报告「已退出」后仍存活（pid 18468），需手动 Stop-Process 清理（补充排查附带发现 2）。
+
+**定性**：生命周期缺口——off 的清理面只覆盖「自己拉起的 serve」，不识别「GUI 壳拉起的 serve」场景。**详细设计留 v1.0.2 规划补齐**，关键约束：off 语义必须与 supervisor.Decide 的「非启动期死亡且无 pending 绝不复活」off 保护自洽——off 清掉壳拉起的 serve 后，壳不得把它复活；识别面走 serve.json（pid/port 运行态真相）而非进程名扫描。
+
 ---
 
 ## 发布与排期（建议）
 
 | 版本 | 内容 | 理由 |
 |---|---|---|
-| **v1.0.1** | F1 PATH + F6 bench 默认 + F7 conns + F9 dst_ip | 低风险速赢；F9 是 F3/F4 的观测前提 |
-| **v1.0.2** | F3 冷启动（拨号帽+预热+竞速）+ F5 doctor 分级 | 同属「首请求体验」一揽子 |
+| **v1.0.1** | **F11 发布链前端修复** + F1 PATH + F6 bench 默认 + F7 conns + F9 dst_ip | F11 为 P0 分发阻断级插队打头；与 F1 同属 packaging/release 链路一次发版验证；F9 是 F3/F4 的观测前提 |
+| **v1.0.2** | F3 冷启动（拨号帽+预热+竞速）+ F5 doctor 分级 + F12 off 生命周期 | 同属「首请求体验 + 生命周期」一揽子 |
 | **v1.0.3** | F4 数据面回灌 | 调度器内核改动，单独一版留观测期 |
 | **v1.1.0** | F2 镜像链 + rules v11 + F8 池加厚 + F10 衰减 | 含签名规则发版与 schema bump，小版本号 |
 

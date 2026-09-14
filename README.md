@@ -3,7 +3,7 @@
 > 一头直连，一头 CDN —— 断一头，活一头。
 > 中国开发者的 GitHub 全链路加速器：网页 / 登录 / clone / push / Release 下载 / SSH 六场景，周可用率 ≥ 99.5%。
 
-**状态：M2-W4（双通道降级 + Git/SSH 集成，v0.5 beta 准备）** —— 通道 A（直连择优）/通道 B（CDN 反代，含可一键自部署的 Worker 模板）、吞吐启发下载切道、doctor 驱动的通道级熔断、insteadOf/ssh:443 集成、黑盒故障演练已落地；Windows 真机现场验收是 v0.5 之后的持续项。
+**状态：v1.0.x（v1.0.0 已发布：GUI + 自更新 + NSIS/签名发布链；真机四轮验收完成，修复排期见 [docs/GHydra-v1.0.x-Dogfooding-Fix-Plan.md](docs/GHydra-v1.0.x-Dogfooding-Fix-Plan.md)）** —— 通道 A（直连择优）/通道 B（CDN 反代，含可一键自部署的 Worker 模板）、吞吐启发下载切道、doctor 驱动的通道级熔断、insteadOf/ssh:443 集成、config 持久化、serve 内两段式自更新、Wails v3 桌面面板（supervisor 监督 + 托盘）已落地。
 
 > **仓库可见性**：2026-09-13 曾短暂转 private（开发期决策），**同日转回 public——开源策略不变（MIT）**。
 > 轨迹详见 `docs/GHydra-M3-Plan.md` §5 拍板记录 #11。私有窗口留下的配额纪律
@@ -70,6 +70,21 @@ ghydra serve --listen 127.0.0.1:9801 --cdn "https://<你的worker>/"
 ## 开发
 
 CI 即开发环境：push 触发 lint（gofmt/vet）→ 三平台单测 → 基准记录 → 四目标交叉编译 + artifact。见 [.github/workflows/ci.yml](.github/workflows/ci.yml)。
+
+### GUI / 前端构建
+
+桌面面板是 SolidJS + Vite（`internal/guiapp/frontend/`），经 `go:embed all:frontend/dist` 打进 gui 变体单二进制（`dist/` 不入库，`dist/.gitkeep` stub 仅保证无 npm 产物时默认构建可编译）：
+
+```bash
+# 1. 构建前端（产物落 internal/guiapp/frontend/dist/）
+cd internal/guiapp/frontend && npm ci && npm run build
+# 2. 构建 gui 变体（CGO=0，Windows 可交叉）
+go build -tags gui -trimpath -ldflags "-s -w" -o ghydra-gui.exe ./engine/cmd/ghydra
+# 3. 启动桌面面板
+./ghydra-gui.exe gui
+```
+
+CI 链路：[.github/workflows/ci-gui.yml](.github/workflows/ci-gui.yml)（前端 + 三平台壳）与 [.github/workflows/release.yml](.github/workflows/release.yml)（tag 发版，frontend job → 三平台 GUI 构建，含 dist/index.html 防回归断言）。CLI 六产物不含前端、构建路径零改动。
 
 ## License
 
