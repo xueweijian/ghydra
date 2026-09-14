@@ -19,3 +19,11 @@ func killServe(pid int) {
 func killServeHard(pid int) {
 	syscall.Kill(pid, syscall.SIGKILL)
 }
+
+// procAlive 进程存活探测（off --wait 轮询用；kill(pid,0) 不发信号）。
+func procAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	return syscall.Kill(pid, 0) == nil
+}

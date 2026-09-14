@@ -1,0 +1,137 @@
+name: release
+
+# W4p2 D5：tag 驱动全链路出包。
+#   push tag v* → 交叉构建（package.sh 单一事实源）+ 原生 NSIS + 原生 mac gui
+#   → checksums.txt → **draft Release** → 通知本地签名（scripts/sign-release，
+#   私钥永不出用户侧/沙箱——拍板 §8-1，CI 零 secret）。
+#
+# 产物命名契约（selfupdate SelectAsset 前缀 ghydra-<goos>-<goarch>.）见
+# scripts/package.sh 头注；draft → 本地 `sign-release -tag <v> -publish` 收尾。
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.25" # 与根 go.mod（toolchain go1.25.0）一致
+
+jobs:
+  crossbuild:
+    name: 交叉构建六产物（package.sh）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: package.sh 全平台装配（含归档布局自检）
+        run: sh scripts/package.sh "${{ github.ref_name }}" dist
+      - name: 产物清单留痕
+        run: |
+          ls -la dist/
+          echo "--- SHA256SUMS ---"
+          cat dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crossbuild
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-gui:
+    name: Windows gui 变体 + NSIS 安装器
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash # pwsh 坑（本项目第 5 次教训）
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: NSIS 红线静态断言（卸载序列安全关键）
+        run: sh scripts/check-nsi.sh
+      - name: 构建 gui 变体单二进制（CGO=0）
+        run: go build -tags gui -trimpath -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o packaging/windows/ghydra.exe ./engine/cmd/ghydra
+      - name: makensis
+        run: |
+          makensis -V2 packaging/windows/ghydra.nsi
+          ls -la packaging/windows/ ../../ 2>/dev/null || true
+          # OutFile 相对脚本 cwd 的上级（仓库根）
+          test -f ghydra-windows-amd64-setup.exe || test -f packaging/ghydra-windows-amd64-setup.exe
+      - name: 归位 setup.exe
+        run: |
+          if [ -f packaging/ghydra-windows-amd64-setup.exe ]; then mv packaging/ghydra-windows-amd64-setup.exe ./; fi
+          test -f ghydra-windows-amd64-setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-setup
+          path: ghydra-windows-amd64-setup.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  mac-gui:
+    name: macOS gui 变体（arm64，cgo 原生）
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: 构建 gui 变体（WKWebView 需 cgo）
+        run: go build -tags gui -trimpath -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o ghydra ./engine/cmd/ghydra
+      - name: 打包（归档布局：根级 ghydra，selfupdate 白名单）
+        run: python3 -c "
+import zipfile
+z = zipfile.ZipFile('ghydra-darwin-arm64-gui.zip', 'w', zipfile.ZIP_DEFLATED)
+z.write('ghydra', 'ghydra')
+z.close()"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-gui
+          path: ghydra-darwin-arm64-gui.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: 汇聚 checksums + draft Release
+    needs: [crossbuild, windows-gui, mac-gui]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      - name: 平铺产物
+        run: |
+          mkdir dist
+          find artifacts -type f -name "ghydra*" -exec mv {} dist/ \;
+          ls -la dist/
+          # 产物数量红线：6 交叉 + 1 setup + 1 mac gui = 8
+          n=$(ls dist/ | wc -l)
+          [ "$n" -eq 8 ] || { echo "FAIL: 产物数 $n ≠ 8"; exit 1; }
+      - name: 生成 checksums.txt（sha256sum 标准双空格 = ParseChecksums 兼容）
+        run: |
+          cd dist
+          sha256sum ghydra-* > checksums.txt
+          cat checksums.txt
+      - name: 创建 draft Release（等待本地签名）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --draft \
+            --title "GHydra ${{ github.ref_name }}" \
+            --notes "自动构建（draft）。签名后发布：scripts/sign-release -key ... -tag ${{ github.ref_name }} -publish" \
+            dist/*
+      - name: 签名提示（人工步骤，私钥不出用户侧）
+        run: |
+          echo "============================================================"
+          echo " draft Release 就绪。收尾（本地/沙箱执行）："
+          echo "   GH_TOKEN=xxx go run ./scripts/sign-release \\"
+          echo "     -key shared/ghydra-keys/ghydra-release.key \\"
+          echo "     -tag ${{ github.ref_name }} -publish"
+          echo "============================================================"

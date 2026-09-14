@@ -250,20 +250,47 @@ func onCmd(args []string) {
 func offCmd(args []string) {
 	fs := flag.NewFlagSet("off", flag.ExitOnError)
 	dbPath := fs.String("db", defaultDBPath(), "SQLite 路径")
+	waitFlag := fs.Bool("wait", false, "等待 serve 进程死透（卸载器用；超时 10s 强杀兜底）")
 	_ = fs.Parse(args)
 
 	ensureReconcile(*dbPath)
 
 	// 核：恢复快照 + 还原 git/ssh 托管（与 API /api/off 同一份实现）。
 	// 恢复失败保留快照重试（下次命令/用户修复环境后仍有机会）。
-	if err := releaseTakeover(*dbPath); err != nil {
-		log.Printf("恢复未完成: %v（保留快照，可重试 ghydra off）", err)
+	relErr := releaseTakeover(*dbPath)
+	if relErr != nil {
+		log.Printf("恢复未完成: %v（保留快照，可重试 ghydra off）", relErr)
 	}
 
 	d := loadDaemonState()
 	stopServe(d)
+	if *waitFlag && d != nil {
+		// NSIS 卸载序列（D4 安全关键）：--wait 等进程死透再返回，
+		// 否则 Windows 下 exe 被运行中进程锁定，卸载器删不掉。
+		deadline := time.Now().Add(10 * time.Second)
+		for procAlive(d.PID) && time.Now().Before(deadline) {
+			time.Sleep(250 * time.Millisecond)
+		}
+		if procAlive(d.PID) {
+			killServeHard(d.PID) // 超时强杀兜底
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
 	removeDaemonState()
 	fmt.Println("GHydra 已退出，系统代理已恢复。")
+	if code := offExitCode(relErr, *waitFlag); code != 0 {
+		os.Exit(code)
+	}
+}
+
+// offExitCode off 的退出码契约：--wait（卸载器路径）下恢复失败必须非零
+// （NSIS 据此弹窗中止——绝不静默留下半接管态）；交互模式保持历史语义
+// 退出 0（错误已打印，快照保留可重试）。
+func offExitCode(releaseErr error, wait bool) int {
+	if releaseErr != nil && wait {
+		return 3
+	}
+	return 0
 }
 
 // restoreManagedOnOff off 路径的 git/ssh 快照还原。失败仅告警不阻塞

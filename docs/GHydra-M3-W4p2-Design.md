@@ -169,6 +169,25 @@ push tag v* → build(3平台×产物, ldflags) → NSIS(linux交叉免,win原�
 - NSIS 脚本（卸载序列安全关键）；release.yml tag 驱动；产物命名 golden；`v0.9.0-rc1` tag 演练全链路（含签名脚本）。
 - **退出**：rc1 tag → Release draft 产物齐 + checksums + minisig 全链路绿 + selfupdate 从 rc1 升 rc2 演练通过（fake 或真 tag）。
 
+> **实施记录（2026-09-14，本地六产物装配全绿后 push）**：
+> - **命名修订（实现服从 selfupdate 冻结实现）**：D4 表 `ghydra_<v>_windows_amd64.zip` 为笔误——
+>   SelectAsset 前缀 = `ghydra-<goos>-<goarch>.`（连字符无版本）；GUI 变体 `-gui.zip` 后缀
+>   与该前缀的 "." 不匹配，CLI/GUI 互不误选 ✓。**darwin 分架构 tar.gz 替代 universal**：
+>   SelectAsset 无 universal fallback，改冻结代码不值（D4 表作废以此为准）。
+> - 归档布局：根级单文件 `ghydra`/`ghydra.exe`（= selfupdate Files 白名单；PlanSwap
+>   ErrStagingIncomplete 兜底）。package.sh 内置解包回读自检。
+> - **NSIS 红线四条**（scripts/check-nsi.sh 静态断言，CI windows job 门禁）：①卸载先
+>   `off --wait` ②off 失败弹窗可中止 ③绝不碰 `%USERPROFILE%\.ghydra\`（崩溃恢复凭证，
+>   误删=用户原代理值永久丢失）④不预置自启。**offExitCode 契约**：--wait 模式恢复失败
+>   exit 3（NSIS 依据）；交互模式保持 exit 0 历史语义（表驱动测试）。
+> - **BusyBox ash 两个诡异坑（package.sh gobuild 实证）**：①if 条件上下文里 segfault
+>   子进程的 `$?` 读成 **0**（命令替换上下文才正常 139）→ 改为产物存在性+rc 双判定；
+>   ②裸赋值 `out=$(...)` 会把 rc=139 传播给赋值语句本身 → `set -e` 直接杀脚本 →
+>   改 if 条件上下文赋值。
+> - **遗留到 P4/D7**：gui 变体的自更新寻址——gui 二进制跑 update 会按前缀匹配到 CLI
+>   归档，交换后 gui 消失；D7 需给 Updater 加 variant（寻址 `-gui` 后缀资产）。
+
+
 ### P4 flags 持久化 + GUI 更新流（D6+D7+D8）
 - config 表 + 合并优先级 + /api/config 扩展 + /api/update/* + SSE + Settings 页 + 托盘 tooltip。
 - **退出**：L1 优先级矩阵 + L2 fake-release 端到端（check→apply→pending→boot）+ GUI 真机渲染走查（W3 方法论）+ golden 双端。
