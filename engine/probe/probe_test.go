@@ -64,6 +64,11 @@ func TestRunEndpointsDirectAndTrace(t *testing.T) {
 	if c.TTFBMS <= 0 || c.Bytes == 0 {
 		t.Fatalf("trace/body not recorded: %+v", c)
 	}
+	// F9：dst_ip 必须是 httptest 服务器的实际地址（127.0.0.1:port）。
+	want := strings.TrimPrefix(srv.URL, "https://")
+	if c.DstIP != want {
+		t.Fatalf("dst_ip = %q, want httptest addr %q", c.DstIP, want)
+	}
 }
 
 func TestRunProxyConnect(t *testing.T) {

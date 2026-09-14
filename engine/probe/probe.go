@@ -85,7 +85,11 @@ type Check struct {
 	Name     string `json:"name"`
 	Mode     Mode   `json:"mode"`
 	Target   string `json:"target"`
-	OK       bool   `json:"ok"`
+	// DstIP 实际拨号落地的对端地址（ip:port）。direct=目标站真实 IP；
+	// proxy=本地代理地址；CDN=CDN 边缘（F9：四轮报告「直连 2.5MB/s
+	// 用的哪个 IP」从此可答，也是 F3/F4 的观测前提）。
+	DstIP string `json:"dst_ip,omitempty"`
+	OK    bool   `json:"ok"`
 	// Reachable 表示已经收到对端 HTTP 响应；即使是 401/403/404，
 	// 也能证明 DNS/TCP/TLS/HTTP 链路已走通。
 	Reachable bool   `json:"reachable"`
@@ -263,7 +267,10 @@ func (r *Runner) httpEndpoints() []Endpoint {
 	}
 }
 
-func (r *Runner) client(mode Mode) (*http.Client, error) {
+// client 构造某模式的 HTTP 客户端。onDial 非空时，每次拨号成功回调
+// 实际连接（F9：读 RemoteAddr 捕获落地 IP；DialOverride 的地址改写
+// 发生在内层，回调拿到的是改写后的真实对端）。
+func (r *Runner) client(mode Mode, onDial func(net.Conn)) (*http.Client, error) {
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
 	if r.cfg.TLSConfig != nil {
 		tlsConfig = r.cfg.TLSConfig.Clone()
@@ -275,13 +282,24 @@ func (r *Runner) client(mode Mode) (*http.Client, error) {
 	baseDial := dialer.DialContext
 	dialCtx := baseDial
 	if len(r.cfg.DialOverride) > 0 {
+		inner := dialCtx
 		dialCtx = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			if h, port, err := net.SplitHostPort(addr); err == nil {
 				if ip, hit := r.cfg.DialOverride[h]; hit {
 					addr = net.JoinHostPort(ip, port)
 				}
 			}
-			return baseDial(ctx, network, addr)
+			return inner(ctx, network, addr)
+		}
+	}
+	if onDial != nil {
+		inner := dialCtx
+		dialCtx = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			conn, err := inner(ctx, network, addr)
+			if err == nil {
+				onDial(conn)
+			}
+			return conn, err
 		}
 	}
 	tr := &http.Transport{
@@ -334,7 +352,8 @@ func (t *traceTimes) getStage() string {
 func (r *Runner) runHTTP(ctx context.Context, mode Mode, ep Endpoint) Check {
 	started := time.Now()
 	c := Check{Scenario: ep.Scenario, Name: ep.Name, Mode: mode, Target: ep.URL, Class: ClassUnknown}
-	client, err := r.client(mode)
+	var dstIP string // F9：拨号成功即被 onDial 写入（Do 返回前完成，无竞态）
+	client, err := r.client(mode, func(conn net.Conn) { dstIP = conn.RemoteAddr().String() })
 	if err != nil {
 		c.Error = err.Error()
 		c.Class = ClassProxyUnreachable
@@ -389,6 +408,7 @@ func (r *Runner) runHTTP(ctx context.Context, mode Mode, ep Endpoint) Check {
 	}
 	req.Header.Set("User-Agent", r.cfg.UserAgent)
 	resp, err := client.Do(req)
+	c.DstIP = dstIP // F9：DNS 失败等未拨号场景为空（omitempty 略）
 	if err != nil {
 		c.Error = err.Error()
 		c.Class = classify(err, 0, trace.getStage(), mode)
@@ -480,6 +500,9 @@ func (r *Runner) runTCP(ctx context.Context, mode Mode, scenario, name, target s
 	}
 	c.OK, c.Reachable, c.Class = true, true, ClassOK
 	c.DurationMS = elapsedMS(started)
+	if conn.RemoteAddr() != nil {
+		c.DstIP = conn.RemoteAddr().String() // F9：direct=目标真实 IP；proxy=代理地址（CONNECT 隧道对端）
+	}
 	conn.Close()
 	return c
 }

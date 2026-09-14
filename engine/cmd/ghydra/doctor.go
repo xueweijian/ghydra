@@ -119,8 +119,8 @@ func persistDoctorReports(st *store.Store, reports []probe.Report) {
 
 func printDoctorReport(rep probe.Report) {
 	fmt.Printf("doctor %-6s 五场景 %d/%d（%.1f%%），含 SSH 观测 %d/%d，总耗时 %.0fms\n", rep.Mode, rep.CoveredPassed, rep.CoveredTotal, percent(rep.CoveredPassed, rep.CoveredTotal), rep.Passed, rep.Total, rep.DurationMS)
-	fmt.Printf("%-10s %-18s %-6s %-16s %-7s %-15s %9s %9s %s\n",
-		"SCENARIO", "CHECK", "OK", "REACH", "STATUS", "CLASS", "TTFB_MS", "RATE_BPS", "ERROR")
+	fmt.Printf("%-10s %-18s %-6s %-16s %-22s %-7s %-15s %9s %9s %s\n",
+		"SCENARIO", "CHECK", "OK", "REACH", "DST_IP", "STATUS", "CLASS", "TTFB_MS", "RATE_BPS", "ERROR")
 	for _, s := range rep.Scenarios {
 		for _, c := range s.Checks {
 			ok := "FAIL"
@@ -131,8 +131,8 @@ func printDoctorReport(rep probe.Report) {
 			if c.Reachable {
 				reach = "yes"
 			}
-			fmt.Printf("%-10s %-18s %-6s %-16s %-7d %-15s %9.1f %9.0f %s\n",
-				c.Scenario, c.Name, ok, reach, c.Status, c.Class, c.TTFBMS, c.RateBPS, c.Error)
+			fmt.Printf("%-10s %-18s %-6s %-16s %-22s %-7d %-15s %9.1f %9.0f %s\n",
+				c.Scenario, c.Name, ok, reach, c.DstIP, c.Status, c.Class, c.TTFBMS, c.RateBPS, c.Error)
 		}
 	}
 }
