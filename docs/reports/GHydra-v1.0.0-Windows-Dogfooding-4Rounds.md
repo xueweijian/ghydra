@@ -396,3 +396,54 @@ proxy 组：与前三轮完全一致（serve 未运行，全部 proxy_unreachabl
 3. **直连 GitHub 分钟级波动是环境常态**（一轮主站被墙、二轮 raw 被重置、三/四轮全通），与代理软件无关；这正说明 ghydra 调度器（persist last_good、CDN 择优）有真实价值。
 4. **gh-proxy.com 镜像对本机持续不可用**：20:49 CF 边缘拦截 → 21:42/21:43 应用层 403（首页正常），一小时内拦截方式变化，建议开发准备备用镜像。
 5. 其他既录问题不变：安装器不写 PATH；bench 默认 bootstrap 仅 meta；gui zip 无独立 ghydra-gui.exe（`ghydra gui` 启动）；doctor proxy 组在 serve 未运行时全部 proxy_unreachable。
+
+---
+
+# 补充：双击 ghydra.exe "闪退"排查 + GUI 资源缺失 bug（22:20–22:25）
+
+## 双击闪退（非 bug）
+两个变体（Program Files 安装版 / gui zip 版）无参数运行的行为一致：打印用法帮助后立即退出（退出码 2，实测复现）。双击 = 无参数运行，黑窗口打印后 <0.1s 关闭，属控制台程序正常行为。使用方式：终端内运行子命令；桌面面板需运行 gui zip 变体的 `ghydra gui` 子命令。
+已在 D:\gh 创建可双击的启动器「启动GHydra面板.bat」（纯 ASCII，已验证可拉起面板）。
+
+## 新发现 bug：GUI 前端资源未嵌入，窗口内容疑似空白
+`ghydra gui` 可正常拉起（Wails v3.0.0-beta.20 / WebView2 152.0.4191.66，窗口标题 "GHydra" 出现，supervisor 拉起 serve 子进程），但日志持续报错：
+```
+ERR [AssetFileServerFS] Unable to handle request url=/ err=no `index.html` could be found in your Assets fs.FS
+ERR [AssetFileServerFS] Unable to handle request url=/favicon.ico err=no `index.html` could be found in your Assets fs.FS
+```
+即 Windows gui zip 构建产物中未嵌入前端 index.html，WebView2 加载不到页面，窗口大概率显示空白。两次启动（22:22、22:24）均复现。建议检查 gui 构建的 embed 步骤/发布流水线是否漏打包前端产物。
+
+构建信息（日志原文）：Compiler=go1.25.14，-tags=gui，CGO_ENABLED=0，vcs.revision=1a2b89222a37a42014ee71b8ed150b7b7e067866，vcs.time=2026-09-14T11:59:01Z。
+
+测试后现场已清理：ghydra 进程 0，注册表基线未变，9801 无监听。
+
+---
+
+# 补充：「GUI 空白是否因下载包错误」排查（22:28–22:45）
+
+用户质疑 GUI 空白可能是下载包不对。排查结论：**包完全正确，是发布构建本身的缺陷**。
+
+## 证据链
+1. v1.0.0 全部资产经 GitHub API 核对，Windows 仅 3 个包：setup.exe (6,977,381 B)、普通版 zip (5,296,237 B)、gui zip (6,958,887 B)。已下载的 gui zip 字节数与 API 一致，SHA256 `c6ae9371...dc24ba` 与 checksums.txt 一致。
+2. 补下另外两个包核对（本次经 GitHub 直连抢在窗口期完成，期间直连再次经历 恢复→504→恢复 的波动）：
+   - ghydra-windows-amd64.zip：5,296,237 B，SHA256 `7d42f844...812f5a` ✅ 与 checksums.txt 一致
+   - ghydra-darwin-arm64-gui.zip：6,305,850 B，SHA256 `b78e0c43...3aad94` ✅ 与 checksums.txt 一致
+3. 三个包内容对比（unzip -l）：
+   ```
+   windows普通版:  ghydra.exe  12,539,392 B（单文件）
+   windows gui版:  ghydra.exe  17,203,200 B（单文件，比普通版大 4.66MB = Wails 运行时）
+   darwin gui版:   ghydra      15,603,442 B（单文件）
+   ```
+   三个包都只含单个二进制，无任何独立前端资源文件 → 设计上前端应 go:embed 进二进制。
+4. 运行时报错 `no index.html could be found in your Assets fs.FS` 表明嵌入的资产 FS 里没有 index.html——典型原因是打包时未先构建前端（frontend dist 为空即被 embed）。
+
+**结论：gui zip / setup.exe 下载无误、校验通过；Windows 与 macOS 的 gui 构建存在同一缺陷（前端未嵌入，窗口必然空白），需修复发布流水线（先构建前端产物再 wails build）。**
+
+## 附带发现
+1. `ghydra get` 下载器实测（22:34，网络恶化窗口）：A 通道 HTTP 504（TTFB 11.7s）、B 通道（CDN）**HTTP 403**（TTFB 2.5s），0 字节失败——B 通道默认 CDN 疑似 gh-proxy 类镜像（与 21:42 起 gh-proxy.com 对本机 403 的现象吻合）；--json 输出结构清晰（segments 含每通道 ttfb/why_out），可观测性好。
+2. **生命周期缺口**：由 GUI supervisor 拉起的 serve 子进程（22:25:15 启动）在 `ghydra off` 报告"已退出"后仍存活（pid 18468），需手动 Stop-Process。off 未覆盖 GUI 场景拉起的守护。
+3. 22:28–22:40 期间再次观测到 GitHub 直连 恢复(200)→504 网关错误→恢复(200) 的分钟级波动；DNS 解析正常（20.205.243.166 为正规 GitHub IP），本地无 TUN/拦截进程，504 为链路中间层瞬时行为。
+4. 环境备注：本机 PATH 中存在 `D:\Program Files\ProxyBridge` 与 `D:\Antigravity IDE\bin`（未运行）；curl 下载 504 响应体为 92 字节最小 HTML，非 GitHub 官方错误页。
+
+## 现场确认
+ghydra off 已执行；残留 serve 子进程已手动清除（0 进程）；注册表 ProxyEnable=0 / ProxyServer=127.0.0.1:10808 / AutoConfigURL 空；9801 无监听。
