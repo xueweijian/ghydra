@@ -177,10 +177,10 @@ export default function Settings() {
           <input type="text" value={form()!.rulesUrl}
             onInput={(e) => setForm({ ...form()!, rulesUrl: e.currentTarget.value })} />
           <div class="row">
-            <label>规则周期（分钟）</label>
+            <label class="nowrap">规则周期（分钟）</label>
             <input type="number" min="1" style={{ width: "6em" }} value={form()!.rulesIntervalS / 60}
               onInput={(e) => setForm({ ...form()!, rulesIntervalS: Math.max(1, Number(e.currentTarget.value) || 1) * 60 })} />
-            <label>体检周期（分钟，0=关）</label>
+            <label class="nowrap">体检周期（分钟，0=关）</label>
             <input type="number" min="0" style={{ width: "6em" }} value={form()!.doctorEveryS / 60}
               onInput={(e) => setForm({ ...form()!, doctorEveryS: Math.max(0, Number(e.currentTarget.value) || 0) * 60 })} />
           </div>

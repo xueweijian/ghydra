@@ -1,14 +1,97 @@
 package selfupdate
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/xueweijian/ghydra/engine/get"
 )
 
 // 设计 §7 L1-2 / L1-8：Releases API JSON 解析 + 资产选择（U3 域白名单 / U8 无 minisig 拒）。
+
+// W4p2 p4c-6 演练回归：坏公钥覆盖 → PublicKeyErr 返回 error、ApplyPlan 预检
+// 拒绝（不 panic 带走 daemon）；FrozenPublicKey 保持 panic 语义（信任锚损坏）。
+func TestBadKeyOverrideNoPanic(t *testing.T) {
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "bad.pub")
+	if err := os.WriteFile(bad, []byte("untrusted comment: junk\nRWRnotakey\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(dir, "nope.pub")
+
+	restore := func() { SetPublicKeyOverride(""); frozenKeyOnce = sync.Once{}; frozenPub = nil; frozenKeyErr = nil }
+	defer restore()
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{{"malformed", bad}, {"missing-file", missing}} {
+		t.Run(tc.name, func(t *testing.T) {
+			SetPublicKeyOverride(tc.path)
+			frozenKeyOnce = sync.Once{}
+			frozenPub, frozenKeyErr = nil, nil
+
+			if _, err := PublicKeyErr(); err == nil {
+				t.Fatal("PublicKeyErr: want error for bad override")
+			}
+			// ApplyPlan 预检：无 Downloader 前的公钥检查应先报错而非 panic。
+			// （DL==nil 的检查在前，这里传一个非 nil 桩走不到；直接断言预检存在：
+			// 用 DL=nil 时返回的是 Downloader 错误，故只验证 PublicKeyErr 路径。）
+
+			frozenKeyOnce = sync.Once{}
+			frozenPub, frozenKeyErr = nil, nil
+			func() {
+				defer func() {
+					if recover() == nil {
+						t.Fatal("FrozenPublicKey: want panic for bad override")
+					}
+				}()
+				_ = FrozenPublicKey()
+			}()
+
+			frozenKeyOnce = sync.Once{}
+			frozenPub, frozenKeyErr = nil, nil
+		})
+	}
+
+	// 恢复生产冻结锚（内联复位后再断言；defer 兜底防后续用例污染）。
+	SetPublicKeyOverride("")
+	frozenKeyOnce = sync.Once{}
+	frozenPub, frozenKeyErr = nil, nil
+	if _, err := PublicKeyErr(); err != nil {
+		t.Fatalf("restore: want frozen key OK, got %v", err)
+	}
+}
+
+// ApplyPlan 预检：坏覆盖 + 非 nil Downloader → 返回 "公钥不可用" 错误而非 panic。
+func TestApplyPlanPreflightRejectsBadKey(t *testing.T) {
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "bad.pub")
+	if err := os.WriteFile(bad, []byte("RWRjunk\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	SetPublicKeyOverride(bad)
+	frozenKeyOnce = sync.Once{}
+	frozenPub, frozenKeyErr = nil, nil
+	defer func() {
+		SetPublicKeyOverride("")
+		frozenKeyOnce = sync.Once{}
+		frozenPub, frozenKeyErr = nil, nil
+	}()
+
+	u := &Updater{DL: get.New(get.Config{}, plainFetcher{cl: &http.Client{}}, nil)}
+	err := u.ApplyPlan(context.Background(), Plan{})
+	if err == nil || !strings.Contains(err.Error(), "公钥不可用") {
+		t.Fatalf("want 公钥不可用 error, got %v", err)
+	}
+}
 
 func loadReleaseFixture(t *testing.T) Release {
 	t.Helper()

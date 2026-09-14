@@ -206,8 +206,14 @@ var publicKeyOverridePath string
 // SetPublicKeyOverride 注入公钥文件覆盖（cmd 装配层 init 调用）。
 func SetPublicKeyOverride(path string) { publicKeyOverridePath = path }
 
-// FrozenPublicKey release 签名公钥（编译期冻结；私钥离线，同 W2 纪律）。
-func FrozenPublicKey() ed25519.PublicKey {
+// PublicKeyErr 返回冻结公钥；解析失败时**返回 error 而非 panic**
+//（Apply 预检用：坏信任锚应让本次更新失败，而不是带走整个 daemon）。
+func PublicKeyErr() (ed25519.PublicKey, error) {
+	loadFrozenKey()
+	return frozenPub, frozenKeyErr
+}
+
+func loadFrozenKey() {
 	frozenKeyOnce.Do(func() {
 		src := releasePublicKeyFile
 		if publicKeyOverridePath != "" {
@@ -220,8 +226,15 @@ func FrozenPublicKey() ed25519.PublicKey {
 		}
 		frozenPub, _, frozenKeyErr = rules.ParsePublicKey([]byte(src))
 	})
-	if frozenKeyErr != nil {
-		panic("selfupdate: release 公钥不可用: " + frozenKeyErr.Error())
+}
+
+// FrozenPublicKey release 签名公钥（编译期冻结；私钥离线，同 W2 纪律）。
+// panic 仅发生在信任锚本身损坏——这在生产（编译期内嵌）不应发生；
+// 运行期动态路径请用 PublicKeyErr。
+func FrozenPublicKey() ed25519.PublicKey {
+	pub, err := PublicKeyErr()
+	if err != nil {
+		panic("selfupdate: release 公钥不可用: " + err.Error())
 	}
-	return frozenPub
+	return pub
 }

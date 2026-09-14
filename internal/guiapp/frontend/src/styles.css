@@ -19,7 +19,8 @@ main { flex: 1; padding: 20px 28px; max-width: 980px; }
 .mono { font-family: ui-monospace, "Cascadia Mono", Menlo, monospace; font-size: 12px; word-break: break-all; }
 .muted { color: #64748b; font-size: 12px; }
 .err { color: #ef4444; font-size: 13px; }
-.row { display: flex; gap: 8px; margin: 8px 0; align-items: center; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; align-items: center; }
+.nowrap { white-space: nowrap; }
 button { background: #2563eb; border: 0; color: white; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 button:disabled { opacity: 0.5; }
 input[type="text"], input[type="password"] { background: #131f38; border: 1px solid #1e2d4d; color: #e2e8f0; padding: 8px 10px; border-radius: 6px; width: 100%; }

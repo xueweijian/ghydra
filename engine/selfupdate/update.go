@@ -138,6 +138,11 @@ func (u *Updater) ApplyPlan(ctx context.Context, plan Plan) error {
 	if u.DL == nil {
 		return errors.New("selfupdate: Downloader 未装配")
 	}
+	// 信任锚预检：坏公钥在这里以 error 退出（apply 状态机转 failed），
+	// 而不是在 verify 步骤 panic 带走整个 daemon（W4p2 p4c-6 演练实证）。
+	if _, err := PublicKeyErr(); err != nil {
+		return fmt.Errorf("selfupdate: release 公钥不可用: %w", err)
+	}
 	phase := func(p string) {
 		if u.OnPhase != nil {
 			u.OnPhase(p)
