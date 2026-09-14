@@ -217,14 +217,16 @@ $(wait_api 100)
 EOF
   [ -n "$SP" ] && [ -n "$TOK" ] || { cat "$D/serve.log" 2>/dev/null; fail "serve 未就绪（B）"; }
 
-  # 持久化两字段（doctor_every_s 需重启；cdn 热更对照不改）
+  # 持久化两字段（响应回显的是重启前运行态——新值落 config 表，重启后
+  # 生效；requires_restart 用旗标名 doctor_interval，非字段名 doctor_every_s）
   body=$(curl -s -m 10 -X POST -H "X-GHydra-Token: $TOK" -H "Content-Type: application/json" \
     -d '{"doctor_every_s":7200,"rules_url":"https://example.test/rules.json"}' \
     "http://127.0.0.1:$SP/api/config" || true)
   echo "$body" >"$D/cfg.json"
-  grep -q '"doctor_every_s":7200' "$D/cfg.json" || { cat "$D/cfg.json"; fail "config 响应应回显 7200"; }
-  grep -q 'doctor_every_s' "$D/cfg.json" && grep -q '"requires_restart":\[[^]]*doctor_every_s' "$D/cfg.json" \
-    || fail "requires_restart 应含 doctor_every_s"
+  echo "$body" | grep -q '"requires_restart":\[[^]]*"rules_url"' \
+    || { echo "$body"; fail "requires_restart 应含 rules_url"; }
+  echo "$body" | grep -q '"requires_restart":\[[^]]*"doctor_interval"' \
+    || { echo "$body"; fail "requires_restart 应含 doctor_interval"; }
 
   # 重启 daemon（kill_serve = 管理面终止；无快照 → 退出 hook 无害）
   kill_serve
