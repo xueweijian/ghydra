@@ -60,10 +60,11 @@ gobuild() {
   done
 }
 # read_serve <字段>：从 serve.json 抽 pid/port（运行态真相自写——每轮重读，
-# 端口迁移跟随，W4p1 教训）。
+# 端口迁移跟随，W4p1 教训）。文件缺席时返回 0 + 空输出——裸赋值 SP=$(…)
+# 若带非零 rc 会被 set -e 杀脚本（P3 教训的变体，CI 三平台实证）。
 read_serve() {
   f="$GHDIR/serve.json"
-  [ -f "$f" ] || return 1
+  [ -f "$f" ] || return 0
   sed -n "s/.*\"$1\":\([0-9]*\).*/\1/p" "$f" | head -1
 }
 kill_serve() {
@@ -138,8 +139,8 @@ wait_api() {
   while [ $i -lt "$1" ]; do
     SP=$(read_serve port)
     if [ -n "$SP" ] && [ -f "$GHDIR/api-token" ]; then
-      TOK=$(cat "$GHDIR/api-token")
-      if curl -s -o /dev/null -m 1 -H "X-GHydra-Token: $TOK" "http://127.0.0.1:$SP/api/status"; then
+      TOK=$(cat "$GHDIR/api-token" 2>/dev/null) || true
+      if [ -n "$TOK" ] && curl -s -o /dev/null -m 1 -H "X-GHydra-Token: $TOK" "http://127.0.0.1:$SP/api/status"; then
         echo "$SP $TOK"
         return 0
       fi
@@ -157,10 +158,10 @@ cmd_scenario_a() {
 
   run serve --managed --update-api "$API" --update-trust-host 127.0.0.1 \
     >"$D/serve.log" 2>&1 &
-  read SP TOK <<EOF
+  read SP TOK <<EOF || true
 $(wait_api 100)
 EOF
-  [ -n "$SP" ] && [ -n "$TOK" ] || { cat "$D/serve.log"; fail "serve 未就绪"; }
+  [ -n "$SP" ] && [ -n "$TOK" ] || { cat "$D/serve.log" 2>/dev/null; fail "serve 未就绪"; }
 
   # check（同步 + 缓存）：has_update
   curl -s -m 30 -H "X-GHydra-Token: $TOK" "http://127.0.0.1:$SP/api/update/check" \
@@ -185,12 +186,13 @@ EOF
   # 第二段（模拟壳 supervisor）：同路径拉继任
   run serve --managed >>"$D/serve.log" 2>&1 &
 
-  # 继任 BootHook 自检→Confirm→探活版本跳变（每轮重读 serve.json 跟随迁移）
+  # 继任 BootHook 自检→Confirm→探活版本跳变（每轮重读 serve.json 跟随迁移；
+  # curl 失败是常态——|| true 防 set -e 杀循环）
   i=0; got=""
   while [ $i -lt 150 ]; do
     SP2=$(read_serve port)
     if [ -n "$SP2" ]; then
-      body=$(curl -s -m 1 -H "X-GHydra-Token: $TOK" "http://127.0.0.1:$SP2/api/status" 2>/dev/null)
+      body=$(curl -s -m 1 -H "X-GHydra-Token: $TOK" "http://127.0.0.1:$SP2/api/status" 2>/dev/null || true)
       case "$body" in
         *'"version":"1.0.1"'*) got=1; break ;;
       esac
@@ -210,15 +212,16 @@ cmd_scenario_b() {
   GHDIR="$(home_native)/.ghydra"
 
   run serve --managed >"$D/serve.log" 2>&1 &
-  read SP TOK <<EOF
+  read SP TOK <<EOF || true
 $(wait_api 100)
 EOF
-  [ -n "$SP" ] && [ -n "$TOK" ] || { cat "$D/serve.log"; fail "serve 未就绪（B）"; }
+  [ -n "$SP" ] && [ -n "$TOK" ] || { cat "$D/serve.log" 2>/dev/null; fail "serve 未就绪（B）"; }
 
   # 持久化两字段（doctor_every_s 需重启；cdn 热更对照不改）
-  curl -s -m 10 -X POST -H "X-GHydra-Token: $TOK" -H "Content-Type: application/json" \
+  body=$(curl -s -m 10 -X POST -H "X-GHydra-Token: $TOK" -H "Content-Type: application/json" \
     -d '{"doctor_every_s":7200,"rules_url":"https://example.test/rules.json"}' \
-    "http://127.0.0.1:$SP/api/config" >"$D/cfg.json"
+    "http://127.0.0.1:$SP/api/config" || true)
+  echo "$body" >"$D/cfg.json"
   grep -q '"doctor_every_s":7200' "$D/cfg.json" || { cat "$D/cfg.json"; fail "config 响应应回显 7200"; }
   grep -q 'doctor_every_s' "$D/cfg.json" && grep -q '"requires_restart":\[[^]]*doctor_every_s' "$D/cfg.json" \
     || fail "requires_restart 应含 doctor_every_s"
@@ -227,12 +230,12 @@ EOF
   kill_serve
   sleep 1
   run serve --managed >>"$D/serve.log" 2>&1 &
-  read SP TOK <<EOF
+  read SP TOK <<EOF || true
 $(wait_api 100)
 EOF
-  [ -n "$SP" ] && [ -n "$TOK" ] || { cat "$D/serve.log"; fail "重启 serve 未就绪"; }
+  [ -n "$SP" ] && [ -n "$TOK" ] || { cat "$D/serve.log" 2>/dev/null; fail "重启 serve 未就绪"; }
 
-  body=$(curl -s -m 5 -H "X-GHydra-Token: $TOK" "http://127.0.0.1:$SP/api/config")
+  body=$(curl -s -m 5 -H "X-GHydra-Token: $TOK" "http://127.0.0.1:$SP/api/config" || true)
   echo "$body" | grep -q '"doctor_every_s":7200' || { echo "$body"; fail "doctor_every_s 应跨重启持久"; }
   echo "$body" | grep -q '"rules_url":"https://example.test/rules.json"' || fail "rules_url 应跨重启持久"
 
