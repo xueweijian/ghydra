@@ -14,6 +14,10 @@ on:
 env:
   WAILS_VERSION: v3.0.0-beta.20 # 升级必须三平台全绿（DevWorkflow §6 纪律）
 
+defaults:
+  run:
+    shell: bash # windows 矩阵 pwsh 坑（ls -la / $VAR 展开等），全 workflow 显式 bash
+
 jobs:
   frontend:
     name: 前端构建（solid+vite）
