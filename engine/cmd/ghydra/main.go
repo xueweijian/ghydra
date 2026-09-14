@@ -144,7 +144,7 @@ func usage() {
   ghydra update [check|rollback] [--pre] [--allow-downgrade]  自更新（永不自毁）
   ghydra doctor [--mode direct|proxy|both]          六场景探针+直连对照+分类报告
   ghydra diag [--days N] [--out 文件.zip]            脱敏诊断包（token/凭据/家目录剔除）
-  ghydra bench [--mode bootstrap|direct|proxy]     自举链或六域名存活报告
+  ghydra bench [--mode direct|proxy|bootstrap]     六域名存活报告（F6：默认 direct；bootstrap=自举链自检）
   ghydra poc [--listen ADDR] [--rewrite-sni N]      裸 SNI 转发器（调试工具）
   ghydra loadtest [--mode sni|connect] [--concurrency N] [--rounds M]  并发压测
 `)
@@ -158,6 +158,17 @@ func statusCmd(args []string) {
 	_ = fs.Parse(args)
 
 	ensureReconcile(*dbPath) // 任何命令入口都对账（崩溃残留恢复）
+
+	// F7：顶部补当前连接数——serve 运行态走免 token 的 GET /status，
+	// 与 /api/status 的 conns 字段同源（四轮验收现象 8：不再要求用户
+	// 从 API 抓字段）。
+	if st := loadDaemonState(); st != nil && st.Port > 0 && serveAlive(st.Port) {
+		if n, ok := fetchConns(st.Port); ok {
+			fmt.Printf("当前连接: %d\n", n)
+		}
+	} else {
+		fmt.Println("当前连接: 0（serve 未运行）")
+	}
 
 	if *dbPath == "" {
 		fmt.Println("未配置数据库路径（HOME 不可用）")
@@ -1007,7 +1018,7 @@ func defaultDBPath() string {
 func benchCmd(args []string) {
 	fs := flag.NewFlagSet("bench", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "输出 JSON（真机验收报告格式）")
-	mode := fs.String("mode", "bootstrap", "模式: bootstrap|direct|proxy")
+	mode := fs.String("mode", "direct", "模式: direct|proxy|bootstrap（F6：默认 direct=六域名报告即用户价值；bootstrap 仅自举链自检用）")
 	proxyAddr := fs.String("proxy", "http://127.0.0.1:9801", "proxy 模式的 HTTP CONNECT 地址")
 	repo := fs.String("repo", "xueweijian/ghydra", "六域名探针使用的仓库 owner/name")
 	timeout := fs.Duration("timeout", 30*time.Second, "总超时")
@@ -1035,7 +1046,7 @@ func benchCmd(args []string) {
 			if c.OK {
 				passed++
 			}
-			fmt.Printf("%-10s %-4s %-15s status=%d ttfb=%.1fms class=%s %s\n", c.Name, map[bool]string{true: "OK", false: "FAIL"}[c.OK], c.Mode, c.Status, c.TTFBMS, c.Class, c.Error)
+			fmt.Printf("%-10s %-4s %-15s dst=%-22s status=%d ttfb=%.1fms class=%s %s\n", c.Name, map[bool]string{true: "OK", false: "FAIL"}[c.OK], c.Mode, c.DstIP, c.Status, c.TTFBMS, c.Class, c.Error)
 		}
 		fmt.Printf("bench %s: %d/%d GitHub 域名可用\n", pmode, passed, len(checks))
 		return

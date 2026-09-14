@@ -361,3 +361,25 @@ func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(v)
 }
+
+// fetchConns F7：读 serve 免 token 的 GET /status 取连接数（与 /api/status
+// 的 conns 同源）。statusCmd 顶部「当前连接: N」用；daemon 侧响应缺失或
+// 解析失败返回 false（调用方保持沉默，不干扰后续 last_good 输出）。
+func fetchConns(port int) (int64, bool) {
+	cl := &http.Client{Timeout: 2 * time.Second}
+	resp, err := cl.Get(fmt.Sprintf("http://127.0.0.1:%d/status", port))
+	if err != nil {
+		return 0, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, false
+	}
+	var out struct {
+		Conns int64 `json:"conns"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&out) != nil {
+		return 0, false
+	}
+	return out.Conns, true
+}

@@ -38,6 +38,9 @@ ghydra doctor --mode both --json
 # 7 天汇总
 ghydra doctor --report --since 168h
 
+# 六域名存活基准（F6 起默认 direct，含 dst_ip 落地地址列；bootstrap=自举链自检）
+ghydra bench
+
 # Release 下载：A 择优起步，慢/断自动 Range 续传切 B
 ghydra get <release-asset-url> -o out.bin --cdn "https://<你的worker>/t/<TOKEN>/"
 
