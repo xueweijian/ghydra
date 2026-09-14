@@ -1,4 +1,4 @@
-; GHydra Windows 安装器（W4p2 D4，NSIS 3.x）
+﻿; GHydra Windows 安装器（W4p2 D4，NSIS 3.x）
 ; 构建：makensis ghydra.nsi（CI windows runner 自带 NSIS）
 ; 前置：同目录存在 ghydra.exe（**gui 变体**单二进制，-tags gui 构建）
 ;
@@ -12,6 +12,10 @@
 Unicode true
 ManifestDPIAware true
 !include "LogicLib.nsh" ; ${If}/${EndIf}
+; F1：EnVar 插件（v0.3.1 unicode）——PATH 机器级写入/精确删除。
+; DLL 已 vendor（plugins/x86-unicode/，CI 免下载）。!addplugindir 相对路径
+; 按「脚本所在目录」解析（实测），与调用 cwd 无关——CI/本地同构。
+!addplugindir "plugins\x86-unicode"
 
 !define APPNAME "GHydra"
 !define COMPANY "GHydra Project"
@@ -39,6 +43,23 @@ Section "Install"
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\${EXE}"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Uninstall ${APPNAME}.lnk" "$INSTDIR\uninstall.exe"
+
+  ; ── F1：PATH 写入（四轮验收现象 2：安装器不写 PATH，新终端找不到命令）──
+  ; EnVar::SetHKLM = 机器级（Program Files 安装已是管理员上下文，全用户
+  ; 可见）；插件自带 WM_SETTINGCHANGE 广播——新开终端立即可用，免注销。
+  ; AddValue 幂等（已存在返回成功码）；不用 ${EnvVar} 宏（PATH 超长时
+  ; 字符串拼接会截断）；不写 HKCU（机器级安装语义应为全用户可见）。
+  EnVar::SetHKLM
+  EnVar::AddValue "PATH" "$INSTDIR"
+  Pop $0
+  ${If} $0 != 0
+    DetailPrint "EnVar::AddValue PATH 返回 $0（0=成功）——新终端 ghydra 可能不可用"
+  ${EndIf}
+
+  ; F1：App Paths 注册——Win+R 输 ghydra.exe / ShellExecute 可达，零 PATH
+  ; 污染（App Paths 是独立注册键，与 check-nsi.sh 红线 4 检查的自启
+  ; 键无关——此处注释刻意不写该字面量，防静态断言自触发）
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\${EXE}" "" "$INSTDIR\${EXE}"
 
   ; 注册卸载信息（Windows「应用与功能」）
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" \
@@ -71,6 +92,14 @@ Section "Uninstall"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   RMDir "$SMPROGRAMS\${APPNAME}"
+
+  ; ── F1：PATH 精确移除自身条目（DeleteValue 只删精确匹配项，PATH 其余
+  ; 内容绝不动；历史多条重复也一并清）+ App Paths 键删除 ──
+  EnVar::SetHKLM
+  EnVar::DeleteValue "PATH" "$INSTDIR"
+  Pop $0
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\${EXE}"
+
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
   DeleteRegKey HKLM "Software\${APPNAME}"
 

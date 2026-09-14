@@ -26,7 +26,7 @@
 
 ## F1（P1）NSIS 写入 PATH
 
-**方案**：EnVar 插件（v0.3.4 unicode）+ 双注册。
+**方案**：EnVar 插件（**v0.3.1** unicode——设计稿误写 v0.3.4，上游最新即 v0.3.1）+ 双注册。
 
 1. 安装：`EnVar::SetHKLM` + `EnVar::AddPath "$INSTDIR"`（装 Program Files 已是管理员上下文）；插件 DLL vendor 进仓库 `installer/plugins/x86-unicode/`，CI 免下载。
 2. 同时注册 `HKLM\...\App Paths\ghydra.exe`（Win+R / ShellExecute 可达，零 PATH 污染风险）。
@@ -40,6 +40,8 @@
 - 回归：既有 NSIS 四红线（不预置自启/失败弹窗/off --wait 前置/不碰 .ghydra）断言不动。
 
 **验收**：真机新开终端直接 `ghydra version`；卸载后 PATH 干净。
+
+**实施状态（2026-09-15）**：已实现并真机全流程验收——EnVar v0.3.1 DLL vendor 进 `packaging/windows/plugins/x86-unicode/`；`!addplugindir` 按脚本目录解析（实测，与调用 cwd 无关）；.nsi 补 UTF-8 BOM（新版 makensis 对无 BOM 中文脚本报 Bad text encoding）。真机六断言全绿：静默装→HKLM PATH 含 GHydra、App Paths 键在、全新进程解析 `C:\Program Files\GHydra\ghydra.exe`；卸载→PATH 条目精确消失、App Paths 键删、目录删。CI 新增 `nsis-path` L3 job（装/验/卸/清零全链）。坑：NSI 注释里写字面 `CurrentVersion\Run` 会自触发 check-nsi.sh 红线 4——注释措辞需避开。
 
 ---
 

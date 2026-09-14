@@ -169,6 +169,48 @@ jobs:
       - name: ghydra on/off 生命周期 + 崩溃对账集成测试
         run: go test -tags=integration ./engine/cmd/ghydra/ -run Integration -v -count=1
 
+  # F1 L3：NSIS 安装器 PATH 全生命周期断言（四轮验收现象 2 的 CI 化）。
+  # /S 静默装 → HKLM PATH 含 GHydra + App Paths 键 → 新进程解析 ghydra →
+  # 卸载 → PATH 条目精确消失。gui exe 用 stub dist 构建即可（PATH 测试
+  # 不开面板；index.html 断言属 release.yml 职责）。
+  nsis-path:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: NSIS 红线静态断言
+        run: sh scripts/check-nsi.sh
+      - name: 构建 gui 变体（stub dist 足够）
+        env:
+          CGO_ENABLED: "0"
+        run: go build -tags "gui production" -trimpath -ldflags "-s -w -X main.Version=0.0.0-ci" -o packaging/windows/ghydra.exe ./engine/cmd/ghydra
+      - name: makensis（EnVar 插件已 vendor）
+        run: |
+          makensis -V2 packaging/windows/ghydra.nsi
+          test -f ghydra-windows-amd64-setup.exe
+      - name: /S 静默安装 + PATH/AppPaths 断言
+        run: |
+          ./ghydra-windows-amd64-setup.exe /S
+          sleep 3
+          reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path | grep -i "GHydra" || { echo "FAIL: HKLM PATH 无 GHydra"; exit 1; }
+          reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ghydra.exe" >/dev/null || { echo "FAIL: App Paths 键缺失"; exit 1; }
+      - name: 全新进程解析 ghydra（广播后新 PATH）
+        run: |
+          powershell -NoProfile -Command '$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User"); (Get-Command ghydra -ErrorAction Stop).Source' | grep -i ghydra
+          "/c/Program Files/GHydra/ghydra.exe" version | head -1
+      - name: 卸载 + 三清零断言（PATH 条目/App Paths/目录）
+        run: |
+          "/c/Program Files/GHydra/uninstall.exe" /S
+          sleep 3
+          if reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path | grep -i "GHydra"; then echo "FAIL: PATH 残留"; exit 1; fi
+          if reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ghydra.exe" >/dev/null 2>&1; then echo "FAIL: App Paths 残留"; exit 1; fi
+          test ! -d "/c/Program Files/GHydra" || { echo "FAIL: 目录残留"; exit 1; }
+
   # W3：Worker 模板验证（沙箱禁 npm，node_modules 只活在 CI）。
   # 纯逻辑测试（依赖全注入）+ 类型检查 + wrangler 配置校验（dry-run 不上传）。
   worker:
