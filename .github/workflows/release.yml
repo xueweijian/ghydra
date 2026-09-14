@@ -1,9 +1,13 @@
 name: release
 
 # W4p2 D5：tag 驱动全链路出包。
-#   push tag v* → 交叉构建（package.sh 单一事实源）+ 原生 NSIS + 原生 mac gui
+#   push tag v* → 前端构建 → 交叉构建（package.sh 单一事实源）+ 原生 NSIS + 原生 mac gui
 #   → checksums.txt → **draft Release** → 通知本地签名（engine/cmd/sign-release，
 #   私钥永不出用户侧/沙箱——拍板 §8-1，CI 零 secret）。
+#
+# F11（v1.0.0 真机实证）：gui 变体曾裸 go build -tags gui 出空壳——
+#   //go:embed all:frontend/dist + dist/.gitkeep stub 让空 dist 静默编过，装机白屏。
+#   修复：frontend job 先出 dist → 三处 GUI 构建下载嵌入 + index.html 防回归断言。
 #
 # 产物命名契约（selfupdate SelectAsset 前缀 ghydra-<goos>-<goarch>.）见
 # scripts/package.sh 头注；draft → 本地 `sign-release -tag <v> -publish` 收尾。
@@ -17,16 +21,48 @@ permissions:
 
 env:
   GO_VERSION: "1.25" # 与根 go.mod（toolchain go1.25.0）一致；v2 注册修复
+  NODE_VERSION: "22" # 与 ci-gui.yml frontend job 一致
 
 jobs:
+  frontend:
+    name: 前端构建（solid+vite，gui 变体 embed 唯一来源）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: internal/guiapp/frontend/package-lock.json
+      - name: npm ci + build + golden 契约测试
+        working-directory: internal/guiapp/frontend
+        run: |
+          npm ci
+          npm run build
+          npx vitest run
+      - name: 上传 dist（供 GUI 构建嵌入——F11）
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: internal/guiapp/frontend/dist/
+          retention-days: 14
+
   crossbuild:
     name: 交叉构建六产物（package.sh）
+    needs: frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: 还原前端 dist（gui 变体 embed 源——F11）
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: internal/guiapp/frontend/dist
+      - name: 前端防回归断言（stub 设计下空 dist 只会白屏不会编译失败）
+        run: test -f internal/guiapp/frontend/dist/index.html
       - name: package.sh 全平台装配（含归档布局自检）
         run: sh scripts/package.sh "${{ github.ref_name }}" dist
       - name: 产物清单留痕
@@ -43,6 +79,7 @@ jobs:
 
   windows-gui:
     name: Windows gui 变体 + NSIS 安装器
+    needs: frontend
     runs-on: windows-2022
     defaults:
       run:
@@ -52,6 +89,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: 还原前端 dist（gui 变体 embed 源——F11）
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: internal/guiapp/frontend/dist
+      - name: 前端防回归断言（stub 设计下空 dist 只会白屏不会编译失败）
+        run: test -f internal/guiapp/frontend/dist/index.html
       - name: NSIS 红线静态断言（卸载序列安全关键）
         run: sh scripts/check-nsi.sh
       - name: 构建 gui 变体单二进制（CGO=0）
@@ -75,12 +119,20 @@ jobs:
 
   mac-gui:
     name: macOS gui 变体（arm64，cgo 原生）
+    needs: frontend
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: 还原前端 dist（gui 变体 embed 源——F11）
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: internal/guiapp/frontend/dist
+      - name: 前端防回归断言（stub 设计下空 dist 只会白屏不会编译失败）
+        run: test -f internal/guiapp/frontend/dist/index.html
       - name: 构建 gui 变体（WKWebView 需 cgo）
         run: go build -tags gui -trimpath -ldflags="-s -w -X main.Version=${GITHUB_REF_NAME#v} -X main.buildVariant=gui" -o ghydra ./engine/cmd/ghydra
       - name: 打包（归档布局：根级 ghydra，selfupdate 白名单）

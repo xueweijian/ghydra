@@ -75,6 +75,13 @@ for p in "$@"; do
   stage=$(mktemp -d)
   export CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch
   if [ "$p" = "windows-amd64-gui" ]; then
+    # F11 防回归：//go:embed all:frontend/dist + dist/.gitkeep stub 让空 dist
+    # 静默编过（装机白屏）。发布装配前显式断言前端产物在场。
+    [ -f internal/guiapp/frontend/dist/index.html ] || {
+      echo "FAIL: gui 变体缺前端产物 internal/guiapp/frontend/dist/index.html" >&2
+      echo "      先构建: cd internal/guiapp/frontend && npm ci && npm run build" >&2
+      exit 1
+    }
     # gui 变体：win CGO=0 纯 Go 可交叉；linux/darwin gui 需 CGO（CI 原生），
     # 本脚本仅负责 windows-amd64-gui（其余平台 gui 由 release.yml 原生 job 出）。
     gobuild "$stage/$exe" go build -p 1 -tags gui -trimpath -ldflags="$(gldflags "$p")" -o "$stage/$exe" ./engine/cmd/ghydra
