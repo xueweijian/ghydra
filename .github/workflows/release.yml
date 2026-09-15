@@ -172,11 +172,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --draft \
-            --title "GHydra ${{ github.ref_name }}" \
-            --notes "自动构建（draft）。签名后发布：engine/cmd/sign-release -key ... -tag ${{ github.ref_name }} -publish" \
-            dist/*
+          # 速赢包：正式 tag 用仓库内维护的 release notes（docs/release-notes/<tag>.md）；
+          # 无 notes 文件的 tag（rc 演练等）回落占位文案。
+          NOTES_FILE="docs/release-notes/${{ github.ref_name }}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            echo "使用正式 notes: $NOTES_FILE"
+            gh release create "${{ github.ref_name }}" \
+              --draft \
+              --title "GHydra ${{ github.ref_name }}" \
+              --notes-file "$NOTES_FILE" \
+              dist/*
+          else
+            gh release create "${{ github.ref_name }}" \
+              --draft \
+              --title "GHydra ${{ github.ref_name }}" \
+              --notes "自动构建（draft）。签名后发布：engine/cmd/sign-release -key ... -tag ${{ github.ref_name }} -publish" \
+              dist/*
+          fi
       - name: 签名提示（人工步骤，私钥不出用户侧）
         run: |
           echo "============================================================"

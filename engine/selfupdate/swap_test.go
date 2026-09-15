@@ -3,6 +3,7 @@ package selfupdate
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -170,5 +171,49 @@ func TestRollbackSwapWithoutOld(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ExeName), []byte("v1"), 0o755)
 	if err := RollbackSwap(dir, []string{ExeName}); err == nil {
 		t.Error("无 old 凭证时回滚应报错（不能凭空回滚）")
+	}
+}
+
+// TestRecoverFromCrashStagingFailureNonBlocking 速赢包：staging 清扫失败
+// （提权更新残留 ACL——非提权进程 unlinkat Access is denied）不得阻断
+// .bad 清扫与崩溃恢复链；此前每条命令都刷错并跳过后续恢复。
+// Windows 需另一提权进程才能造出该 ACL 形态，本测试在 CI Linux 覆盖。
+func TestRecoverFromCrashStagingFailureNonBlocking(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 需提权进程造 ACL 残留（CI Linux 覆盖此路径）")
+	}
+	dir := t.TempDir()
+	// 崩溃形态：exe 缺失 + old 在场（应触发恢复）+ staging 残留不可删
+	if err := os.WriteFile(filepath.Join(dir, OldName), []byte("survivor-v1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	staging := filepath.Join(dir, StagingDirName)
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "junk.tmp"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(staging, 0o500); err != nil { // 只读 staging → RemoveAll 失败
+		t.Fatal(err)
+	}
+	defer os.Chmod(staging, 0o700) // 还原给 t.TempDir 清理
+
+	actions, err := RecoverFromCrash(dir, []string{ExeName})
+	if err != nil {
+		t.Fatalf("staging 清扫失败不应阻断恢复链: %v", err)
+	}
+	found := false
+	for _, a := range actions {
+		if a.Kind == OpRestoreOld {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("崩溃恢复应继续执行，得到 %+v", actions)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, ExeName))
+	if string(got) != "survivor-v1" {
+		t.Errorf("恢复后 exe 内容 = %q，期望 survivor-v1", got)
 	}
 }
