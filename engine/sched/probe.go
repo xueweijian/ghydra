@@ -23,7 +23,9 @@ func (s *Scheduler) ProbeBest(host string, topN int) int {
 	s.mu.Lock()
 	if d, ok := s.domains[host]; ok {
 		for _, ip := range d.ips {
-			if ip.state == StateActive {
+			// F3：New 候选同样纳入——last_good 恢复与 rules 种子入池后的
+			// 主动验证靠这里（此前只探 Active，对刚入池候选是空转）。
+			if ip.state == StateActive || ip.state == StateNew {
 				targets = append(targets, target{ip.addr})
 			}
 		}

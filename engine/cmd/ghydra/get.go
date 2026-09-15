@@ -24,6 +24,7 @@ import (
 	"github.com/xueweijian/ghydra/engine/channel"
 	"github.com/xueweijian/ghydra/engine/get"
 	"github.com/xueweijian/ghydra/engine/rules"
+	"github.com/xueweijian/ghydra/engine/sched"
 
 	"github.com/xueweijian/ghydra/engine/store"
 )
@@ -89,16 +90,21 @@ func getCmd(args []string) {
 
 	// A 通道：调度器择优（失败降级系统直连——下载器依然可用）。
 	// M3-W2：Matcher 走三级地板（磁盘规则可用则用磁盘，否则内嵌）。
+	// F3：startSchedulerSync——一次性进程先预筛再 Pick（防死种子）；
+	// 拨号/TLS 失败回灌调度池（下载路径的死 IP 也出局）。
 	var pick func(host string) (string, bool)
 	provider := rules.NewProvider(rules.DefaultRulesDir())
 	m := provider.Snapshot().Matcher
-	if sel, stop, err := startScheduler(m, *dbPath); err == nil {
+	var sc *sched.Scheduler
+	if sel, stop, err := startSchedulerSync(m, *dbPath); err == nil {
 		defer stop()
-		pick = func(host string) (string, bool) { return sel.Sched.Pick(host) }
+		sc = sel.Sched
+		pick = func(host string) (string, bool) { return sc.Pick(host) }
 	} else {
 		log.Printf("调度器未启用（%v），A 通道走系统直连", err)
 	}
 	a := get.NewAFetcher(pick)
+	a.OnDialResult = schedReport(sc)
 
 	// B 通道：CDN 前缀反代（--cdn 空 = A-only）
 	var b get.Fetcher

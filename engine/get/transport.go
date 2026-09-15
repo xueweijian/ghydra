@@ -25,6 +25,9 @@ type AFetcher struct {
 	InsecureTLS bool
 	// OnAddr 诊断回调（每次拨号的实际目标；测试/doctor 用）
 	OnAddr func(host, addr string, picked bool)
+	// OnDialResult 拨号/TLS 结果回报（F3：下载路径失败回灌调度池——
+	// 拨号超时与 SNI 阻断 RST 都让死 IP 出局）。仅 picked 候选触发。
+	OnDialResult func(host, addr string, dialMS float64, ok bool)
 }
 
 // NewAFetcher 构造（零值超时用默认）。
@@ -65,19 +68,29 @@ func (a *AFetcher) Get(ctx context.Context, rawURL string, from int64) (*http.Re
 			if a.OnAddr != nil {
 				a.OnAddr(host, target, picked)
 			}
+			report := func(ms float64, ok bool) {
+				if a.OnDialResult != nil && picked {
+					a.OnDialResult(host, target, ms, ok)
+				}
+			}
+			t0 := time.Now()
 			d := &net.Dialer{Timeout: a.dialTimeout()}
 			c, err := d.DialContext(ctx, "tcp", target)
 			if err != nil {
+				report(sinceMS(t0), false)
 				return nil, err
 			}
 			if port == "80" || u.Scheme == "http" {
+				report(sinceMS(t0), true)
 				return c, nil // 明文：不做 TLS
 			}
 			tc := tls.Client(c, &tls.Config{ServerName: host, InsecureSkipVerify: a.InsecureTLS})
 			if err := tc.HandshakeContext(ctx); err != nil {
 				c.Close()
+				report(sinceMS(t0), false) // TCP 通但 TLS 死（SNI 阻断）：同罪
 				return nil, err
 			}
+			report(sinceMS(t0), true)
 			return tc, nil
 		},
 	}
@@ -90,6 +103,10 @@ func (a *AFetcher) dialTimeout() time.Duration {
 		return 10 * time.Second
 	}
 	return a.DialTimeout
+}
+
+func sinceMS(t0 time.Time) float64 {
+	return float64(time.Since(t0).Microseconds()) / 1000
 }
 
 // BFetcher 通道 B：CDN 前缀反代（gh-proxy 协议）。
