@@ -66,9 +66,9 @@ type domainState struct {
 	lastAccess  time.Time // 最近 Pick 时间（IdleAfter 节能用）
 
 	// F3 度量（数据出真理）：冷启动首成功 + 热态拨号分布。
-	createdAt time.Time  // 域池建立时刻
-	firstOKAt time.Time  // 首个成功样本（探测或连接）
-	dialRing  []float64  // 最近成功拨号 ms（warm p50，容量 32）
+	createdAt time.Time // 域池建立时刻
+	firstOKAt time.Time // 首个成功样本（探测或连接）
+	dialRing  []float64 // 最近成功拨号 ms（warm p50，容量 32）
 }
 
 func (d *domainState) find(addr string) *ipState {
