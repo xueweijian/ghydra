@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -107,7 +108,9 @@ func ExecuteSwap(dir string, ops []Op) error {
 }
 
 // RecoverFromCrash 启动清扫（每次 ghydra 启动入口调用，幂等）：
-//  1. 清 staging 残留（半包解压物）；
+//  1. 清 staging 残留（半包解压物）——失败仅告警不阻断（速赢包：
+//     提权更新残留 ACL 时非提权进程删不掉，此前每条命令刷错并跳过
+//     后续恢复；staging 残留无害，待提权/重装清理）；
 //  2. 清 .bad 残留（保留最近一次供诊断的价值 < 干净状态，v1 删除）；
 //  3. 崩溃恢复：name 缺失而 name.old 在场（交换序列中断）→ old 恢复回正身。
 //
@@ -116,7 +119,7 @@ func RecoverFromCrash(dir string, names []string) ([]Op, error) {
 	var actions []Op
 	staging := filepath.Join(dir, StagingDirName)
 	if err := os.RemoveAll(staging); err != nil {
-		return nil, fmt.Errorf("selfupdate: 清扫 staging: %w", err)
+		log.Printf("[selfupdate] staging 清扫跳过（无权限，待提权清理）: %v", err)
 	}
 	for _, name := range names {
 		bad := filepath.Join(dir, name+".bad")
