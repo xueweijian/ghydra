@@ -70,6 +70,9 @@ type RulesRefreshState struct {
 type PoolSnapshot struct {
 	Sticky string    `json:"sticky"` // 粘性 IP（空 = 无）
 	IPs    []IPEntry `json:"ips"`
+	// F3 冷/热延迟度量（数据出真理；0 = 尚无成功样本）。
+	ColdFirstMS float64 `json:"cold_first_ms,omitempty"` // 域池建立 → 首个成功样本
+	WarmP50MS   float64 `json:"warm_p50_ms,omitempty"`   // 最近成功拨号耗时中位数
 }
 
 // IPEntry 池内单 IP 状态（sched.IPInfo 映射）。

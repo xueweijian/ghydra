@@ -26,6 +26,7 @@ import (
 	"github.com/xueweijian/ghydra/engine/api"
 	"github.com/xueweijian/ghydra/engine/get"
 	"github.com/xueweijian/ghydra/engine/rules"
+	"github.com/xueweijian/ghydra/engine/sched"
 	"github.com/xueweijian/ghydra/engine/selfupdate"
 )
 
@@ -209,14 +210,18 @@ func newSelfupdateUpdater(dbPath, cdn, apiBase string, trustHosts map[string]boo
 
 	provider := rules.NewProvider(rules.DefaultRulesDir())
 	m := provider.Snapshot().Matcher
+	// F3：一次性进程同步预筛（防死种子）+ 下载失败回灌调度池。
 	var pick func(host string) (string, bool)
-	if sel, stop, err := startScheduler(m, dbPath); err == nil {
+	var sc *sched.Scheduler
+	if sel, stop, err := startSchedulerSync(m, dbPath); err == nil {
 		defer stop()
-		pick = func(host string) (string, bool) { return sel.Sched.Pick(host) }
+		sc = sel.Sched
+		pick = func(host string) (string, bool) { return sc.Pick(host) }
 	} else {
 		log.Printf("[selfupdate] 调度器未启用（%v），A 通道走系统直连", err)
 	}
 	a := get.NewAFetcher(pick)
+	a.OnDialResult = schedReport(sc)
 	var b get.Fetcher
 	if cdn != "" {
 		b = newBFetcherProd(cdn)

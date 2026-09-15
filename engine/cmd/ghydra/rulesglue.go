@@ -207,10 +207,23 @@ func rulesSeedRebuild(sc *sched.Scheduler, snap *rules.Snapshot) {
 		}
 		if n := sc.AddCandidates(host, addrs); n > 0 {
 			total += n
-			go sc.ProbeBest(host, 1)
+			// F3：Preflight 并行预筛全部 New 候选（此前 ProbeBest 只探
+			// Active，新种子等于未验证直接进轮换——首请求吃死 IP）。
+			go sc.Preflight(host)
 		}
 	}
 	if total > 0 {
 		log.Printf("[rules] 种子池热重建: +%d 候选（v%d）", total, snap.Version)
+	}
+}
+
+// schedReport 把 AFetcher 拨号/TLS 结果翻译成调度信号（F3：下载路径
+// 失败回灌——死 IP 不再只靠 CONNECT 用户流量出局）。sc nil = no-op。
+func schedReport(sc *sched.Scheduler) func(host, addr string, dialMS float64, ok bool) {
+	if sc == nil {
+		return nil
+	}
+	return func(host, addr string, dialMS float64, ok bool) {
+		sc.Report(host, addr, time.Duration(dialMS*float64(time.Millisecond)), ok)
 	}
 }

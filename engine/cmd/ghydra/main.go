@@ -391,8 +391,8 @@ func serveCmd(args []string) {
 			} else if e.CopyErr != "" {
 				status = "copy:" + e.CopyErr
 			}
-			log.Printf("[conn#%d] %s -> %s accel=%t dial=%.1fms rx=%dB tx=%dB %s",
-				n, e.Host, e.Target, e.Accel, e.DialMS, e.Rx, e.Tx, status)
+			log.Printf("[conn#%d] %s -> %s accel=%t att=%d dial=%.1fms rx=%dB tx=%dB %s",
+				n, e.Host, e.Target, e.Accel, e.Attempts, e.DialMS, e.Rx, e.Tx, status)
 			if apiSrv != nil {
 				apiSrv.PushConn(mapConn(e)) // SSE conn 帧（250ms 合批）
 			}
@@ -467,7 +467,11 @@ func serveCmd(args []string) {
 			if sc != nil {
 				pools := map[string]api.PoolSnapshot{}
 				for _, h := range sc.Hosts() {
-					pools[h] = api.PoolSnapshot{Sticky: sc.StickyIP(h), IPs: mapIPs(sc.Snapshot(h))}
+					ps := api.PoolSnapshot{Sticky: sc.StickyIP(h), IPs: mapIPs(sc.Snapshot(h))}
+					if st2, ok := sc.Stats(h); ok { // F3 冷/热度量（status 观察口）
+						ps.ColdFirstMS, ps.WarmP50MS = st2.ColdFirstMS, st2.WarmP50MS
+					}
+					pools[h] = ps
 				}
 				st.Pools = pools
 			}
@@ -573,6 +577,11 @@ func serveCmd(args []string) {
 				return api.OnResp{}, err
 			}
 			log.Printf("[api] 系统代理已接管（%s）", mode)
+			if sc != nil {
+				// F3 预热：接管即对各域池未验证候选做一轮并行预筛
+				// （首个用户 CONNECT 走热路径而非竞速轮）。
+				go prewarmAll(sc)
+			}
 			return api.OnResp{OK: true, Mode: mode}, nil
 		},
 		SystemOff: func(shutdown bool) (api.OffResp, error) {
@@ -709,10 +718,15 @@ func serveCmd(args []string) {
 		if sc != nil {
 			pools := map[string]any{}
 			for _, host := range sc.Hosts() {
-				pools[host] = map[string]any{
+				p := map[string]any{
 					"sticky": sc.StickyIP(host),
 					"ips":    sc.Snapshot(host),
 				}
+				if st, ok := sc.Stats(host); ok { // F3 冷/热度量
+					p["cold_first_ms"] = st.ColdFirstMS
+					p["warm_p50_ms"] = st.WarmP50MS
+				}
+				pools[host] = p
 			}
 			out["pools"] = pools
 		}
@@ -880,6 +894,24 @@ func portOf(addr string) int {
 // 恢复）→ 主动探测（拨号函数）→ 池枯竭 DoH 兜底 → 后台刷新 →
 // 事件管道。返回 shutdown 必须在退出时调用（flush 持久化）。
 func startScheduler(m *rules.Matcher, dbPath string) (*sched.Selector, func(), error) {
+	return startSchedulerMode(m, dbPath, false)
+}
+
+// startSchedulerSync 一次性进程（get / selfupdate）模式：候选喂数与
+// 预筛同步完成后再返回（F3b）。
+func startSchedulerSync(m *rules.Matcher, dbPath string) (*sched.Selector, func(), error) {
+	return startSchedulerMode(m, dbPath, true)
+}
+
+// prewarmAll 对全部域池做一轮并行预筛预热（F3：on 接管时触发——
+// 死 IP 出局、活 IP 置 Active，首个用户 CONNECT 走热路径而非竞速轮）。
+func prewarmAll(sc *sched.Scheduler) {
+	for _, host := range sc.Hosts() {
+		go sc.Preflight(host) // 无 New 候选时自然 no-op
+	}
+}
+
+func startSchedulerMode(m *rules.Matcher, dbPath string, oneshot bool) (*sched.Selector, func(), error) {
 	cfg := sched.DefaultConfig()
 	sc := sched.New(cfg)
 	sc.Logf = func(f string, a ...any) { log.Printf(f, a...) }
@@ -949,8 +981,11 @@ func startScheduler(m *rules.Matcher, dbPath string) (*sched.Selector, func(), e
 	// ① 候选喂数：DoH 解析（就近可达 IP，实测质量最高）+ 自举链
 	// （meta 网段 + last-good 缓存）。meta 老段在本网络可能整段不可达
 	// ——Preflight 预筛保证用户连接不背死 IP 的 dial 成本。
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// oneshot（get / selfupdate 一次性进程）：同步完成后再放行 Pick
+	// ——此前异步竞速让首 Pick 抢在预筛前选中死 meta 种子
+	// （v1.0.0→v1.0.1 自更新三连败根因，F3b）。
+	seed := func(budget time.Duration) {
+		ctx, cancel := context.WithTimeout(context.Background(), budget)
 		defer cancel()
 		t0 := time.Now()
 
@@ -973,11 +1008,18 @@ func startScheduler(m *rules.Matcher, dbPath string) (*sched.Selector, func(), e
 		}
 		// 1c. 并行预筛：死 IP 直接熔断，不进用户连接路径
 		if n := sc.Preflight("github.com"); n > 0 {
-			log.Printf("[sched] Preflight 预筛 github.com: %d 候选完成", n)
+			log.Printf("[sched] Preflight 预筛 github.com: %d 候选完成（%.1fs）",
+				n, time.Since(t0).Seconds())
 		}
-	}()
+	}
+	if oneshot {
+		seed(8 * time.Second) // 同步（典型 1-3s；杜绝预筛前 Pick）
+	} else {
+		go seed(30 * time.Second) // serve：后台预热，不阻塞端口就绪
+	}
 
-	// ② last_good 恢复（经主动验证后放行）
+	// ② last_good 恢复（经主动验证后放行；F3：Preflight 才真正预筛
+	// New 候选——此前 ProbeBest 只探 Active，恢复路径等于未验证）
 	if st != nil {
 		if good, err := st.LastGood(); err == nil {
 			for host, e := range good {
@@ -986,7 +1028,11 @@ func startScheduler(m *rules.Matcher, dbPath string) (*sched.Selector, func(), e
 				}
 				n := sc.AddCandidates(host, []string{e.IP})
 				if n > 0 {
-					go sc.ProbeBest(host, 1)
+					if oneshot {
+						sc.Preflight(host)
+					} else {
+						go sc.Preflight(host)
+					}
 					log.Printf("[sched] last_good 恢复 %s -> %s (score=%.3f rtt=%.0fms)",
 						host, e.IP, e.Score, e.RTTMS)
 				}

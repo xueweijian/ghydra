@@ -64,6 +64,11 @@ type domainState struct {
 	stickyUntil time.Time
 	probeIdx    int       // 轮转索引（并发自动分散）
 	lastAccess  time.Time // 最近 Pick 时间（IdleAfter 节能用）
+
+	// F3 度量（数据出真理）：冷启动首成功 + 热态拨号分布。
+	createdAt time.Time  // 域池建立时刻
+	firstOKAt time.Time  // 首个成功样本（探测或连接）
+	dialRing  []float64  // 最近成功拨号 ms（warm p50，容量 32）
 }
 
 func (d *domainState) find(addr string) *ipState {
@@ -149,7 +154,7 @@ func (s *Scheduler) AddCandidates(host string, ips []string) int {
 func (s *Scheduler) getOrCreateLocked(host string) *domainState {
 	d, ok := s.domains[host]
 	if !ok {
-		d = &domainState{host: host}
+		d = &domainState{host: host, createdAt: s.clock()}
 		s.domains[host] = d
 	}
 	return d
@@ -200,6 +205,99 @@ func (s *Scheduler) bestActiveLocked(d *domainState) *ipState {
 		}
 	}
 	return best
+}
+
+// PickValidated 热路径择优（F3）：只返回已验证候选（粘性窗口内或
+// Active），命中 Active 时建立粘性。无已验证候选返回 false——
+// 未验证候选交给竞速路径，杜绝单发死 IP（2026-09-15 实证：
+// meta 种子未预筛即被轮转，首请求确定性吃死 IP）。
+func (s *Scheduler) PickValidated(host string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.clock()
+	d := s.getOrCreateLocked(host)
+	d.lastAccess = now
+
+	if d.sticky != nil && now.Before(d.stickyUntil) && d.sticky.state == StateActive {
+		return d.sticky.addr, true
+	}
+	d.sticky = nil
+	if best := s.bestActiveLocked(d); best != nil {
+		d.sticky, d.stickyUntil = best, now.Add(s.cfg.Sticky)
+		return best.addr, true
+	}
+	return "", false
+}
+
+// PickN 竞速候选（F3）：返回最多 n 个拨号候选（不建立粘性）。
+// 先 Active（score 升序，保持择优资格），再按插入序补 New/到期候选
+// （标记 Probing 防并发重复分配）。exclude 中的地址跳过（重试轮
+// 排除已失败者）。返回空 = 无可用候选（触发异步补充，Pick ④ 同语义）。
+func (s *Scheduler) PickN(host string, n int, exclude map[string]bool) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n <= 0 {
+		return nil
+	}
+	now := s.clock()
+	d := s.getOrCreateLocked(host)
+	d.lastAccess = now
+
+	out := make([]string, 0, n)
+	var actives []*ipState
+	for _, ip := range d.ips {
+		if ip.state == StateActive && !exclude[ip.addr] {
+			actives = append(actives, ip)
+		}
+	}
+	sort.SliceStable(actives, func(i, j int) bool {
+		return actives[i].scoreOf(s.cfg) < actives[j].scoreOf(s.cfg)
+	})
+	for _, ip := range actives {
+		if len(out) >= n {
+			return out
+		}
+		out = append(out, ip.addr)
+	}
+	for _, ip := range d.ips {
+		if len(out) >= n {
+			break
+		}
+		if exclude[ip.addr] || ip.state == StateActive || !ip.rotatable(now) {
+			continue
+		}
+		ip.state, ip.probing = StateProbing, true
+		out = append(out, ip.addr)
+	}
+	if len(out) == 0 {
+		go s.resolveAsync(host)
+	}
+	return out
+}
+
+// ReleaseCandidates 归还竞速中未实际拨号的候选（错峰未起跑/整轮
+// 取消）：清 probing 占位、Probing 态回退 New，无 EWMA 副作用
+// （取消不惩罚——惩罚只记真实失败）。
+func (s *Scheduler) ReleaseCandidates(host string, addrs []string) {
+	if len(addrs) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, ok := s.domains[host]
+	if !ok {
+		return
+	}
+	for _, addr := range addrs {
+		ip := d.find(addr)
+		if ip == nil {
+			continue
+		}
+		if ip.state == StateProbing {
+			ip.state = StateNew
+		}
+		ip.probing = false
+	}
 }
 
 // rotateLocked 按优先级轮转挑选可分配候选。轮转索引保证并发连接
@@ -269,6 +367,14 @@ func (s *Scheduler) recordSuccessLocked(d *domainState, ip *ipState, rtt time.Du
 		s.logf("[sched] %s 复活/入池: %s (rtt=%.0fms)", d.host, ip.addr, ip.rtt.mean.val())
 	}
 	ip.state = StateActive
+	// F3 度量：冷启动首成功 + 热态拨号环（warm p50）。
+	if d.firstOKAt.IsZero() {
+		d.firstOKAt = s.clock()
+	}
+	d.dialRing = append(d.dialRing, ms)
+	if len(d.dialRing) > 32 {
+		d.dialRing = d.dialRing[len(d.dialRing)-32:]
+	}
 	if s.OnActive != nil {
 		s.OnActive(d.host, ip.addr, ip.scoreOf(s.cfg), ip.rtt.mean.val())
 	}
@@ -336,6 +442,38 @@ func (s *Scheduler) Snapshot(host string) []IPInfo {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Score < out[j].Score })
 	return out
+}
+
+// DomainStats 冷/热延迟观测（F3 验收度量：数据出真理）。
+type DomainStats struct {
+	ColdFirstMS float64 // 域池建立 → 首个成功样本（探测或连接）
+	WarmP50MS   float64 // 最近成功样本拨号耗时中位数
+	WarmSamples int     // 热态样本数（≤32）
+}
+
+// Stats 返回域名冷/热延迟（/api/status 与日志的观测口）。
+func (s *Scheduler) Stats(host string) (DomainStats, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, ok := s.domains[host]
+	if !ok {
+		return DomainStats{}, false
+	}
+	st := DomainStats{WarmSamples: len(d.dialRing)}
+	if !d.firstOKAt.IsZero() && !d.createdAt.IsZero() {
+		st.ColdFirstMS = float64(d.firstOKAt.Sub(d.createdAt).Microseconds()) / 1000
+	}
+	if len(d.dialRing) > 0 {
+		sorted := append([]float64(nil), d.dialRing...)
+		sort.Float64s(sorted)
+		n := len(sorted)
+		if n%2 == 1 {
+			st.WarmP50MS = sorted[n/2]
+		} else {
+			st.WarmP50MS = (sorted[n/2-1] + sorted[n/2]) / 2
+		}
+	}
+	return st, true
 }
 
 // StickyIP 返回当前粘性 IP（status 观察口；无则空）。

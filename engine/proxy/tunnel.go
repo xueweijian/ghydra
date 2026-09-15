@@ -20,9 +20,9 @@ import (
 	"time"
 )
 
-// DefaultDialTimeout 是上游连接超时（dev-sidecar v2.2 实证参数：
-// 15-21s → 7s，熔断感知足够快、正常握手足够宽）。
-const DefaultDialTimeout = 7 * time.Second
+// DefaultDialTimeout 是上游连接超时（F3 拨号帽：7s → 5s。bench 实证
+// 好 IP 握手 45-105ms，5s 帽不伤慢网；死 IP 在竞速预算内更快出局）。
+const DefaultDialTimeout = 5 * time.Second
 
 // UpstreamSelector 决定目标域名的转发上游。
 // 返回 ok=false 表示不加速：代理将按系统 DNS 直连域名本身。
@@ -42,7 +42,8 @@ type Event struct {
 	Target    string    // 实际拨号地址
 	Accel     bool      // 是否命中加速规则
 	DialErr   error     // 上游连接失败原因（nil = 成功）
-	DialMS    float64   // 上游连接耗时
+	DialMS    float64   // 上游连接耗时（竞速时为胜者实际拨号耗时）
+	Attempts  int       // 实际拨号过的候选数（F3 观测：>1 = 竞速/重试自愈）
 	Rx, Tx    int64     // 下行 / 上行字节总数
 	CopyErr   string    // 双向转发阶段的首个非 EOF 错误摘要（空 = 干净结束）
 	Duration  float64   // 隧道存活毫秒数（200 回写起 → 结束）
@@ -58,6 +59,14 @@ type Server struct {
 	// HTTPHandler 可选：非 CONNECT 请求（GET /pac、/status）交给它——
 	// 同端口托管 PAC（R5），系统代理 AutoConfigURL 直指本端口。
 	HTTPHandler http.Handler
+
+	// F3 竞速拨号参数（零值用 race.go 默认：宽 3 / 错峰 300ms / 预算 10s）。
+	RaceWidth   int
+	RaceStagger time.Duration
+	RaceBudget  time.Duration
+
+	raceMu    sync.Mutex
+	raceSlots map[string]*raceSlot // 同域竞速单飞门（懒初始化）
 
 	bufPool sync.Pool // []byte 32KB，双向转发复用（M0 千并发教训：buffer 池而非连接池）
 }
@@ -110,23 +119,39 @@ func (s *Server) handle(conn net.Conn) {
 	// M1 通道 A 只改道 HTTPS CONNECT（443）。SSH/自定义端口
 	// 保持原 authority 直连：SSH 场景在 doctor 中只做连通性计量，
 	// 不误把 github.com:22 改成 IP:443 的 HTTPS 连接。
-	target, accel := authority, false
+	started := time.Now()
+	var ur upstreamResult
 	if port == "443" && s.Selector != nil {
-		if up, ok := s.Selector.Select(hostOnly); ok && up != "" {
-			target, accel = up, true
+		if rs, ok := s.Selector.(RacingSelector); ok {
+			// F3：已验证热路径 + 竞速拨号 + 池枯竭域名兜底。
+			ur = s.connectAccel(rs, hostOnly, authority)
+		} else if t, ok := s.Selector.Select(hostOnly); ok && t != "" {
+			// legacy 单发路径（非竞速选择器：测试 fake / 简化装配）。
+			t0 := time.Now()
+			c, err := net.DialTimeout("tcp", t, s.dialTimeout())
+			ur = upstreamResult{conn: c, target: t, accel: true, err: err,
+				dialMS: msSince(t0), attempts: 1}
 		}
 	}
-	ev := Event{Host: hostOnly, Target: target, Accel: accel, StartedAt: time.Now()}
-
-	t0 := time.Now()
-	up, err := net.DialTimeout("tcp", target, s.dialTimeout())
-	ev.DialMS = msSince(t0)
-	if err != nil {
-		ev.DialErr = err
+	if ur.conn == nil && ur.err == nil && ur.target == "" {
+		// 非 443 / 无选择器 / 未命中规则：原样直连 authority（零打扰放行）。
+		t0 := time.Now()
+		c, err := net.DialTimeout("tcp", authority, s.dialTimeout())
+		ur = upstreamResult{conn: c, target: authority, err: err,
+			dialMS: msSince(t0), attempts: 1}
+	}
+	ev := Event{Host: hostOnly, Target: ur.target, Accel: ur.accel,
+		StartedAt: started, DialMS: ur.dialMS, Attempts: ur.attempts}
+	if ur.err != nil || ur.conn == nil {
+		if ur.err == nil {
+			ur.err = errNoUpstream
+		}
+		ev.DialErr = ur.err
 		s.emit(ev)
-		writePlain(conn, http.StatusBadGateway, "ghydra: 上游连接失败: "+err.Error())
+		writePlain(conn, http.StatusBadGateway, "ghydra: 上游连接失败: "+ur.err.Error())
 		return
 	}
+	up := ur.conn
 	defer up.Close()
 
 	if _, err := conn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
@@ -137,7 +162,7 @@ func (s *Server) handle(conn net.Conn) {
 
 	// 双向转发。br 可能已缓冲客户端在等 200 期间预发的数据
 	// （TLS 客户端激进时不等 200 就发 ClientHello）——从 br 起拷贝即覆盖。
-	started := time.Now()
+	relayStart := time.Now()
 	txBuf := s.getBuf()
 	rxBuf := s.getBuf()
 	var wg sync.WaitGroup
@@ -158,7 +183,7 @@ func (s *Server) handle(conn net.Conn) {
 	// 上行退出依赖 up 读到 EOF/FIN——先关 down 侧不阻塞 up 读；客户端关连接后 br 返回 EOF。
 	wg.Wait()
 	ev.Tx, ev.Rx = upN, downN
-	ev.Duration = msSince(started)
+	ev.Duration = msSince(relayStart)
 	ev.CopyErr = firstCopyErr(upErr, downErr)
 	s.emit(ev)
 }
@@ -168,6 +193,15 @@ func (s *Server) dialTimeout() time.Duration {
 		return s.DialTimeout
 	}
 	return DefaultDialTimeout
+}
+
+// errNoUpstream：上游获取既无连接也无错误信息时的兜底（防御性）。
+var errNoUpstream = fmt.Errorf("无可用上游")
+
+func (s *Server) logf(format string, args ...any) {
+	if s.Logf != nil {
+		s.Logf(format, args...)
+	}
 }
 
 func (s *Server) emit(ev Event) {

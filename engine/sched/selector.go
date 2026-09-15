@@ -25,19 +25,59 @@ func NewSelector(sc *Scheduler, m *rules.Matcher) *Selector {
 
 // Select 实现 proxy.UpstreamSelector。
 func (sel *Selector) Select(host string) (string, bool) {
-	// ssh.github.com:443 是 SSH 协议，不是 HTTPS；M1 只探测 SSH，
-	// 不把它改道到普通 GitHub HTTPS IP。通道 B/M2 再处理 SSH over 443。
-	if strings.EqualFold(strings.TrimSuffix(host, "."), "ssh.github.com") {
-		return "", false
-	}
-	if sel == nil || sel.Sched == nil || sel.Rules == nil || !sel.Rules.Match(host) {
-		return "", false // 未命中加速域名：放行（系统 DNS 直连）
+	if !sel.accelHost(host) {
+		return "", false // 未命中加速域名/SSH 例外：放行（系统 DNS 直连）
 	}
 	if addr, ok := sel.Sched.Pick(host); ok {
 		return addr, true
 	}
 	// 池枯竭降级：仍走加速路径标记，但目标回退域名本身。
 	return net.JoinHostPort(host, "443"), true
+}
+
+// accelHost 判定 host 是否走加速路径：规则命中且非 SSH 例外。
+// Select 与竞速三方法共用同一口径。
+func (sel *Selector) accelHost(host string) bool {
+	// ssh.github.com:443 是 SSH 协议，不是 HTTPS；M1 只探测 SSH，
+	// 不把它改道到普通 GitHub HTTPS IP。通道 B/M2 再处理 SSH over 443。
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "ssh.github.com") {
+		return false
+	}
+	return sel != nil && sel.Sched != nil && sel.Rules != nil && sel.Rules.Match(host)
+}
+
+// 编译期断言：Selector 具备 proxy 的竞速能力（F3）。
+var _ proxy.RacingSelector = (*Selector)(nil)
+
+// ValidatedPick 实现 proxy.RacingSelector 热路径：只出已验证上游。
+func (sel *Selector) ValidatedPick(host string) (string, bool) {
+	if !sel.accelHost(host) {
+		return "", false
+	}
+	return sel.Sched.PickValidated(host)
+}
+
+// RacingPick 实现 proxy.RacingSelector 竞速候选。
+func (sel *Selector) RacingPick(host string, n int, exclude map[string]bool) []string {
+	if !sel.accelHost(host) {
+		return nil
+	}
+	return sel.Sched.PickN(host, n, exclude)
+}
+
+// RacingReportFail 上报候选真实失败（进 Cooldown，下轮排除）。
+func (sel *Selector) RacingReportFail(host, addr string) {
+	sel.Sched.Report(host, addr, 0, false)
+}
+
+// RacingReportWin 上报候选成功（拨号 ms 喂 EWMA；竞速胜者/迟到胜者）。
+func (sel *Selector) RacingReportWin(host, addr string, dialMS float64) {
+	sel.Sched.Report(host, addr, time.Duration(dialMS*float64(time.Millisecond)), true)
+}
+
+// RacingRelease 归还未实际拨号的候选（取消不惩罚）。
+func (sel *Selector) RacingRelease(host string, addrs []string) {
+	sel.Sched.ReleaseCandidates(host, addrs)
 }
 
 // ReportEvent 把 proxy.Event 翻译成调度信号（OnEvent 回调里调用）。
