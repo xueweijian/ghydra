@@ -30,7 +30,9 @@ export function useEvents() {
     if (es) es.close();
     es = new EventSource(`${daemonBase()}/api/events?token=${encodeURIComponent(apiToken())}`);
     es.addEventListener("open", () => setState((s) => ({ ...s, connected: true })));
-    es.addEventListener("error", () => setState((s) => ({ ...s, connected: false })));
+    // F12：断线必须作废陈旧 status 帧——否则 daemon 被 off 杀死后加速页
+    // 残留「已接管」（僵尸横幅）。重连后新帧自然恢复。
+    es.addEventListener("error", () => setState((s) => ({ ...s, connected: false, status: null })));
     es.addEventListener("hello", (e) => {
       setState((s) => ({ ...s, hello: JSON.parse((e as MessageEvent).data), connected: true }));
     });

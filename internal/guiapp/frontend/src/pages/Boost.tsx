@@ -1,6 +1,7 @@
 // Boost.tsx —— 一键加速（W3c 状态化重写）：接管态 SSE 驱动大开关 +
 // git/ssh 集成卡。on 失败展示回滚语义（apicore 保证失败全回滚）。
-import { createSignal, Show, createResource, For } from "solid-js";
+// F12：断线清本地 msg/err（「接管系统代理 ✓」不再残留）。
+import { createSignal, createEffect, Show, createResource, For } from "solid-js";
 import { systemOn, systemOff, gitOp, sshOp, gitStatus, sshStatus } from "../api/client";
 import type { ApiError } from "../api/client";
 import type { EventsState } from "../api/sse";
@@ -23,6 +24,14 @@ export default function Boost(props: { events: () => EventsState }) {
 
   const takeover = () => props.events().status?.takeover;
   const connected = () => props.events().connected;
+
+  // F12：断线清残留横幅（daemon 死后「接管系统代理 ✓」不再误导）。
+  createEffect(() => {
+    if (!connected()) {
+      setMsg("");
+      setErr("");
+    }
+  });
 
   const [git, gitActions] = createResource<GitStatusInfo>(() => gitStatus());
   const [ssh, sshActions] = createResource<SSHStatusInfo>(() => sshStatus());
@@ -68,7 +77,9 @@ export default function Boost(props: { events: () => EventsState }) {
         when={takeover()}
         fallback={
           <p class="muted">
-            {connected() ? "等待 daemon 状态…" : "daemon 未连接（检查地址与 token，设置页可配）"}
+            {connected()
+              ? "等待 daemon 状态…"
+              : "daemon 未连接或已停止（ghydra off / 已退出）——面板托盘菜单可重启 daemon"}
           </p>
         }
       >

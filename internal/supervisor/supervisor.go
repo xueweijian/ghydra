@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/xueweijian/ghydra/engine/selfupdate"
@@ -78,9 +79,26 @@ type Config struct {
 type Loop struct {
 	cfg Config
 
+	restart atomic.Bool // 用户显式重启意图（一次性；F12 托盘菜单）
+
 	probeFn   func() probeResult
 	pendingFn func() string
 	spawnFn   func(pending string) error
+}
+
+// Restart 用户显式重启意图（托盘菜单「重启 daemon」；F12）。
+// 活着则先终止当前 daemon（serve.json pid），并置一次性 intent：
+// 下一观察轮（≤Interval）按保活语义拉起继任。intent 单次消费——
+// 不破坏 off 保护（无 intent 的死亡仍绝不复活，Decide 语义不动）。
+func (l *Loop) Restart() {
+	l.restart.Store(true)
+	if p := l.probeFn(); p.alive {
+		if st := l.loadServeState(); st != nil && st.PID > 0 {
+			if proc, err := os.FindProcess(st.PID); err == nil {
+				_ = proc.Kill() // Windows 上等效 TerminateProcess；serve 无子树
+			}
+		}
+	}
 }
 
 type probeResult struct {
@@ -149,7 +167,7 @@ func (l *Loop) Step(startup bool) State {
 		return l.emit(State{Phase: phase, Version: p.version, Pending: pend, Port: p.port})
 	}
 
-	if !startup && pend == "" {
+	if !startup && pend == "" && !l.restart.CompareAndSwap(true, false) {
 		return l.emit(State{Phase: "stopped", Pending: pend}) // off 保护
 	}
 
@@ -303,11 +321,12 @@ func (l *Loop) pendingFile() string {
 }
 
 // spawn 拉起托管 serve（继任或启动保活同一路径；--managed 让 serve 端
-// 退出 hook 恢复代理 + 端口迁移 + serve.json 自写，见 cmd/ghydra）。
+// 退出 hook 恢复代理 + 端口迁移 + serve.json 自写，见 cmd/ghydra；
+// --gui-owned 标记 GUI 壳所有权——F12：CLI on/off 文案区分面板场景）。
 func (l *Loop) spawn(pending string) error {
 	args := l.cfg.SpawnArgs
 	if args == nil {
-		args = []string{"serve", "--managed"}
+		args = []string{"serve", "--managed", "--gui-owned"}
 	}
 	var logPath string
 	if l.cfg.Dir != "" {

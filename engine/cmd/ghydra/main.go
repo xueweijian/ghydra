@@ -248,13 +248,14 @@ func serveCmd(args []string) {
 	doctorRepo := fs.String("doctor-repo", probe.DefaultConfig().Repo, "自动 doctor 使用的仓库 owner/name")
 	cdn := fs.String("cdn", "", "B 通道 CDN 前缀（如 https://gh-proxy.com/；空 = 禁用切道，W3 默认化）")
 	managed := fs.Bool("managed", false, "由 ghydra on 拉起（退出时恢复系统代理）")
+	guiOwned := fs.Bool("gui-owned", false, "由 GUI 壳 supervisor 拉起（serve.json 标记 managed，CLI 文案区分）")
 	dialOverride := fs.String("dial-override", "", "host=ip[,host=ip…] 强制上游拨号 IP（演练/镜像映射）")
 	apiToken := fs.String("api-token", "", "本机 API token（显式注入；默认读/建 ~/.ghydra/api-token，M3-W1）")
 	apiTokenFile := fs.String("api-token-file", "", "token 文件路径（覆盖默认位置）")
 	updateAPI := fs.String("update-api", "", "Releases API 覆盖（自更新冒烟/演练用；默认官方源）")
 	updateTrust := fs.String("update-trust-host", "", "额外信任资产域（逗号分隔，演练用；sha256+minisign 仍强制）")
 	guiDist := fs.String("gui-dist", "", "前端面板目录（空 = exe 旁 dist/ 自动探测；不存在则不启面板）")
-	_ = fs.Parse(reorderFlags(args, "scheduler", "managed"))
+	_ = fs.Parse(reorderFlags(args, "scheduler", "managed", "gui-owned"))
 
 	// on 已在拉起前完成残留对账并写入快照；managed 子进程启动
 	// 期间快照存在但 serve.json 还没落盘，不能把当前接管误判成
@@ -779,10 +780,11 @@ func serveCmd(args []string) {
 			PID:       os.Getpid(),
 			Port:      portOf(ln.Addr().String()),
 			StartedAt: time.Now().Unix(),
+			Managed:   *guiOwned, // F12：GUI 壳拉起标记（CLI on/off 文案区分面板场景）
 		}); err != nil {
 			log.Printf("serve.json 写入失败（对账将退化）: %v", err)
 		} else {
-			log.Printf("运行态已写入 serve.json: pid=%d port=%d", os.Getpid(), portOf(ln.Addr().String()))
+			log.Printf("运行态已写入 serve.json: pid=%d port=%d managed=%t", os.Getpid(), portOf(ln.Addr().String()), *guiOwned)
 		}
 	}
 
