@@ -1,4 +1,7 @@
 dist/
+!internal/guiapp/frontend/dist/
+internal/guiapp/frontend/dist/*
+!internal/guiapp/frontend/dist/.gitkeep
 *.exe
 /ghydra
 *.test
