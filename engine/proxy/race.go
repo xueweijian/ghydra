@@ -136,9 +136,12 @@ type upstreamResult struct {
 //
 // ① 已验证热路径单发（粘性/Active）；失败即报并进入竞速。
 // ② 竞速轮 ≤2、预算内、同域单飞：错峰并行拨多个候选，首成者胜，
-//    胜者立即报 Win（置 Active+粘性，追随者走热路径）。
+//
+//	胜者立即报 Win（置 Active+粘性，追随者走热路径）。
+//
 // ③ 兜底：仅当从未竞速（池枯竭）时域名直连（系统 DNS，legacy 语义）；
-//    竞速打满仍无出路则快速失败回 502，绝不静默挂 30s。
+//
+//	竞速打满仍无出路则快速失败回 502，绝不静默挂 30s。
 func (s *Server) connectAccel(rs RacingSelector, host, authority string) upstreamResult {
 	exclude := map[string]bool{}
 	deadline := time.Now().Add(s.raceBudget())
@@ -207,14 +210,14 @@ type raceWin struct {
 
 // raceRound 一轮竞速的结果。
 type raceRound struct {
-	conn        net.Conn
-	winner      string
-	winMS       float64
-	fails       []string  // 真实失败（报 Cooldown）
-	lateWins    []raceWin // 迟到胜者（报 Win 置 Active）
-	released    []string  // 未起跑候选（Release 归还）
-	dialed      int       // 实际起跑数
-	candidates  int       // 本轮候选总数（0 = 池枯竭）
+	conn       net.Conn
+	winner     string
+	winMS      float64
+	fails      []string  // 真实失败（报 Cooldown）
+	lateWins   []raceWin // 迟到胜者（报 Win 置 Active）
+	released   []string  // 未起跑候选（Release 归还）
+	dialed     int       // 实际起跑数
+	candidates int       // 本轮候选总数（0 = 池枯竭）
 }
 
 // dialRaceRound 错峰并行拨候选，首成者胜、其余取消。
