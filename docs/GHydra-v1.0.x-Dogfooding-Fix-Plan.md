@@ -91,6 +91,8 @@
 
 **验收**：真机 ≥10 次冷启动采样，首请求 P95 < 8s，30s 超时零出现；`/api/status` 冷/热延迟字段可查。
 
+**实施状态（2026-09-15，v1.0.2，commit 4529485）**：已实施。三层全落地——拨号帽 7s→5s；竞速拨号器 `engine/proxy/race.go`（错峰 300ms / 宽 3 / 预算 10s 两轮 / 同域单飞门；真实失败即时报、取消不惩罚 Release 归还、迟到胜者报活置 Active+粘性）；预热（on 接管 prewarmAll；last_good/rules 种子改 Preflight——同时修掉 ProbeBest 只探 Active 的验证空转 bug）。**附加项（超出本方案，源于 GUI 第二轮实证）**：①一次性进程（get/selfupdate）同步预筛后再择路——v1.0.0→v1.0.1 自更新三连败根因；②AFetcher 下载失败回灌调度池；③通道窗口只计最终结果（88% 误熔断消除）；④CONNECT 失败自动换次选重试（gui-round2 证据追加项）由竞速轮内建覆盖。TDD：race/pickn/probebest 四组新测试 + 真 Selector 集成（死+活池冷启动 0.31s 自愈）。真机 ≥10 冷启动采样留 v1.0.2-rc1 演练执行。
+
 ---
 
 ## F4（P2）数据面回灌：吞吐感知计分
@@ -121,6 +123,8 @@
 - 新分类 `slow`：2xx 且 (rate < 100KB/s 或 TTFB > 2s) → WARN 不 FAIL；表头 OK 列改 OK/WARN/FAIL。
 - 退出码：仅硬 FAIL 影响非零；WARN 不影响（可用率口径只算 FAIL）。
 - 测试：L1 分类边界（100KB/s±、TTFB 2s±）；golden doctor_run.json 更新。
+
+**实施状态（2026-09-15，v1.0.2，commit e4f4754）**：已实施。ClassSlow（WARN 级，OK/Reachable 保持 true——退出码/可用率/通道判定结构上不受影响）；边界值不判慢（恰 100KB/s / 恰 2s 均不判，防抖动横跳）；doctor 表 OK 列三态。TDD：TestMaybeSlowBoundaries 七组边界 + TestRunHTTPSlowEndpoint（TTFB 2.2s 真源站端到端）。golden 无需迁移（结构未变，既有 fixture 无 slow 样本）。
 
 ## F6（P3）bench 默认模式改 direct
 
@@ -175,6 +179,8 @@ ERR [AssetFileServerFS] Unable to handle request url=/ err=no `index.html` could
 **问题**：GUI supervisor 拉起的 serve 子进程（22:25:15 启动）在 `ghydra off` 报告「已退出」后仍存活（pid 18468），需手动 Stop-Process 清理（补充排查附带发现 2）。
 
 **定性**：生命周期缺口——off 的清理面只覆盖「自己拉起的 serve」，不识别「GUI 壳拉起的 serve」场景。**详细设计留 v1.0.2 规划补齐**，关键约束：off 语义必须与 supervisor.Decide 的「非启动期死亡且无 pending 绝不复活」off 保护自洽——off 清掉壳拉起的 serve 后，壳不得把它复活；识别面走 serve.json（pid/port 运行态真相）而非进程名扫描。
+
+**实施状态（2026-09-15，v1.0.2，commit c47e366）**：已实施（形态按 gui-round2 实测修订：off 杀 serve/还原代理本就正常，真问题是僵尸壳+残留横幅）。supervisor.Restart()——用户显式重启意图一次性覆盖 off 保护（intent 在死亡分支单次消费，Decide 与 TestStepOffGuardNoResurrection 不动）；serve 新 `--gui-owned` 旗标经 supervisor SpawnArgs 默认携带，serve.json 落 managed 标记；CLI on 拒绝/off 成功文案区分面板场景；壳 OnState 相位沿 stopped/failed → 面板前台明示终态；托盘菜单新增「重启 daemon」；前端 sse 断线作废陈旧 status 帧 + Boost 清残留横幅（vitest 红→绿）。真机 F12 场景复测留 rc 演练。
 
 ## F13（P1）GUI webview 连接链三重断（终版根因 + 已修复）
 
