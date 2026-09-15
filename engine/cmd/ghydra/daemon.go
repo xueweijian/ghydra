@@ -35,6 +35,7 @@ type daemonState struct {
 	PID       int   `json:"pid"`
 	Port      int   `json:"port"`
 	StartedAt int64 `json:"started_at"`
+	Managed   bool  `json:"managed,omitempty"` // GUI 壳拉起（--managed）；F12：CLI 文案区分面板场景
 }
 
 func ghydraDir() string {
@@ -205,6 +206,9 @@ func onCmd(args []string) {
 	ensureReconcile(*dbPath)
 
 	if d := loadDaemonState(); d != nil && serveAlive(d.Port) {
+		if d.Managed {
+			log.Fatalf("serve 已在运行（端口 %d，由 GUI 面板管理）。请在面板中操作，或先执行 ghydra off", d.Port)
+		}
 		log.Fatalf("serve 已在运行（端口 %d）。先执行 ghydra off", d.Port)
 	}
 
@@ -301,6 +305,9 @@ func offCmd(args []string) {
 	}
 	removeDaemonState()
 	fmt.Println("GHydra 已退出，系统代理已恢复。")
+	if d != nil && d.Managed {
+		fmt.Println("提示：GUI 面板仍在运行（不会自动重启 daemon，off 保护）；如需彻底退出请退出面板托盘。")
+	}
 	if code := offExitCode(relErr, *waitFlag); code != 0 {
 		os.Exit(code)
 	}

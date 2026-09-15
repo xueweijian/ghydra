@@ -172,12 +172,24 @@ func Run() {
 	// P4c：监督循环（启动保活 + 更新继任 + tooltip + 连接注入）。
 	// OnState 来自监督 goroutine——v3 公开 setter 内部主线程封送；
 	// 真机走查验证项（P5 清单）。
+	lastPhase := "" // 相位沿（stopped 每 2s 重发——终态唤起只做一次）
 	sup := supervisor.New(supervisor.Config{
 		ExePath: exePath,
 		OnState: func(s supervisor.State) {
 			tray.SetTooltip(tooltipFor(s))
 			if s.Phase == "running" || s.Phase == "updated" {
 				inj.apply()
+			}
+			// F12：daemon 死亡（CLI off / 崩溃）壳不做僵尸——面板带到
+			// 前台明示终态；托盘菜单「重启 daemon」显式拉起（不破坏
+			// off 保护：无显式意图的死亡绝不复活）。
+			if s.Phase != lastPhase {
+				if s.Phase == "stopped" || s.Phase == "failed" {
+					win.Show()
+					win.UnMinimise()
+					win.Focus()
+				}
+				lastPhase = s.Phase
 			}
 		},
 		Logf: log.Printf,
@@ -191,6 +203,10 @@ func Run() {
 		win.Show()
 		win.UnMinimise()
 		win.Focus()
+	})
+	trayMenu.Add("重启 daemon").OnClick(func(*application.Context) {
+		log.Printf("[tray] 用户请求重启 daemon（显式意图，一次性覆盖 off 保护）")
+		sup.Restart()
 	})
 	trayMenu.Add("开机自启：切换").OnClick(func(*application.Context) {
 		enabled, err := app.Autostart.IsEnabled()
