@@ -126,6 +126,9 @@ func printDoctorReport(rep probe.Report) {
 			ok := "FAIL"
 			if c.OK {
 				ok = "OK"
+				if c.Class == probe.ClassSlow {
+					ok = "WARN" // F5：可达但慢（不进退出码/可用率分子）
+				}
 			}
 			reach := "no"
 			if c.Reachable {

@@ -48,6 +48,9 @@ const (
 	ClassHTTP5xx          Class = "http_5xx"
 	ClassProxyUnreachable Class = "proxy_unreachable"
 	ClassUnknown          Class = "unknown"
+	// ClassSlow 可达但慢（F5，WARN 级）：2xx 且（速率 <100KB/s 或
+	// TTFB>2s）。OK 保持 true——退出码与 7 天可用率分子只认硬 FAIL。
+	ClassSlow Class = "slow"
 )
 
 // Config 是探针运行参数。
@@ -448,7 +451,27 @@ func (r *Runner) runHTTP(ctx context.Context, mode Mode, ep Endpoint) Check {
 	}
 	c.DurationMS = elapsedMS(started)
 	r.fillTrace(&c, trace, started)
+	maybeSlow(&c, resp.StatusCode) // F5：2xx 且慢 → WARN 级（OK 不动）
 	return c
+}
+
+// F5 阈值（方案冻结稿：100KB/s / TTFB 2s；边界值不判慢——恰好达标
+// 不算「慢」，避免抖动场景反复横跳）。
+const (
+	slowRateFloorBPS = 100 * 1024
+	slowTTFBMS       = 2000
+)
+
+// maybeSlow「可达但慢」分级：2xx 且（速率 <100KB/s 或 TTFB>2s）→
+// Class=slow。WARN 级语义：OK 保持 true，退出码/可用率分子不受影响；
+// 非 2xx 与已失败的检查不动。
+func maybeSlow(c *Check, status int) {
+	if c.Class != ClassOK || status < 200 || status >= 300 {
+		return
+	}
+	if (c.RateBPS > 0 && c.RateBPS < slowRateFloorBPS) || c.TTFBMS > slowTTFBMS {
+		c.Class = ClassSlow
+	}
 }
 
 func (r *Runner) fillTrace(c *Check, t *traceTimes, started time.Time) {
