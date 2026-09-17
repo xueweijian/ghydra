@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -165,6 +166,13 @@ func (r *updateRunner) Apply() (string, error) {
 		r.st.Target = plan.Version
 		r.mu.Unlock()
 		if err := r.updater.ApplyPlan(ctx, plan); err != nil {
+			// v1.0.3 PR3：安装目录不可写翻译成人话（GUI 无控制台，
+			// 原始 ErrDirNotWritable 文案不可行动；runas 自动提权仅
+			// CLI 路径——面板提权升级留 v1.1.0）。
+			if errors.Is(err, selfupdate.ErrDirNotWritable) {
+				r.setFailed("安装目录需要管理员权限——请退出面板后以管理员身份重新打开再升级，或从 Release 下载安装包覆盖升级（%v）", err)
+				return
+			}
 			r.setFailed("apply: %v", err)
 			return
 		}
