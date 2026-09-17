@@ -10,3 +10,10 @@ func guiMain() int {
 	guiapp.Run()
 	return 0
 }
+
+// noArgsDispatch —— 无参数直达面板（v1.0.3 PR1）：双击 exe / 无参快捷
+// 方式不再 usage+exit 2 闪退。单实例机制兜底双开；CLI 子命令语义不变。
+// 一行壳层直通，行为由 ci-gui 构建冒烟 + 真机走查覆盖（起真窗口不可单测）。
+func noArgsDispatch() int {
+	return guiMain()
+}

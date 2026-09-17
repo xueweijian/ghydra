@@ -39,10 +39,14 @@ Section "Install"
   ; 卸载器必须先于文件删除写入（selfdelete 模式的一部分）
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
-  ; 开始菜单
+  ; 快捷方式统一带 "gui" 参数——exe 裸跑是 usage+exit 2（v1.0.2 真机
+  ; 双击闪退实证）。$DESKTOP 需 current 上下文（提权安装器默认 all，
+  ; 会落到 Public 桌面——用户实际桌面不可见）。
+  SetShellVarContext current
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
-  CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\${EXE}"
+  CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\${EXE}" "gui"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Uninstall ${APPNAME}.lnk" "$INSTDIR\uninstall.exe"
+  CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\${EXE}" "gui"
 
   ; ── F1：PATH 写入（四轮验收现象 2：安装器不写 PATH，新终端找不到命令）──
   ; EnVar::SetHKLM = 机器级（Program Files 安装已是管理员上下文，全用户
@@ -92,13 +96,22 @@ Section "Uninstall"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   RMDir "$SMPROGRAMS\${APPNAME}"
+  ; 桌面 lnk 与安装时同上下文（current）删除
+  SetShellVarContext current
+  Delete "$DESKTOP\${APPNAME}.lnk"
 
   ; ── F1：PATH 精确移除自身条目（DeleteValue 只删精确匹配项，PATH 其余
-  ; 内容绝不动；历史多条重复也一并清）+ App Paths 键删除 ──
+  ; 内容绝不动；历史多条重复也一并清）+ App Paths 按归属条件删除 ──
   EnVar::SetHKLM
   EnVar::DeleteValue "PATH" "$INSTDIR"
   Pop $0
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\${EXE}"
+  ; 双安装场景（如 C 盘旧装 + F 盘新装）：App Paths 只在仍指向本安装
+  ; 目录时才删——无条件删会带走另一份安装的 Win+R/ShellExecute 注册
+  ; （v1.0.2 真机实证）。
+  ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\${EXE}" ""
+  ${If} $0 == "$INSTDIR\${EXE}"
+    DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\${EXE}"
+  ${EndIf}
 
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
   DeleteRegKey HKLM "Software\${APPNAME}"
