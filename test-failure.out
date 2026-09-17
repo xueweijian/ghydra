@@ -1,0 +1,998 @@
+=== RUN   TestHostGuard
+--- PASS: TestHostGuard (0.01s)
+=== RUN   TestHostGuardExtraHosts
+--- PASS: TestHostGuardExtraHosts (0.00s)
+=== RUN   TestTokenGuard
+--- PASS: TestTokenGuard (0.01s)
+=== RUN   TestEmptyServerTokenRejectsAll
+--- PASS: TestEmptyServerTokenRejectsAll (0.00s)
+=== RUN   TestCORSPreflight
+--- PASS: TestCORSPreflight (0.00s)
+=== RUN   TestStatusEndpoint
+--- PASS: TestStatusEndpoint (0.00s)
+=== RUN   TestConfigEndpoints
+--- PASS: TestConfigEndpoints (0.01s)
+=== RUN   TestOnOffEndpoints
+--- PASS: TestOnOffEndpoints (0.00s)
+=== RUN   TestOnOffNotAssembled
+--- PASS: TestOnOffNotAssembled (0.00s)
+=== RUN   TestDoctorEndpoints
+--- PASS: TestDoctorEndpoints (0.00s)
+=== RUN   TestGitSSHEndpoints
+--- PASS: TestGitSSHEndpoints (0.01s)
+=== RUN   TestGetEndpoints
+--- PASS: TestGetEndpoints (0.00s)
+=== RUN   TestMitmStub
+--- PASS: TestMitmStub (0.00s)
+=== RUN   TestNotFoundAndMethod
+--- PASS: TestNotFoundAndMethod (0.00s)
+=== RUN   TestBodyTooLarge
+--- PASS: TestBodyTooLarge (0.01s)
+=== RUN   TestStatusDiffTick
+--- PASS: TestStatusDiffTick (0.00s)
+=== RUN   TestConnBatchFlush
+--- PASS: TestConnBatchFlush (0.00s)
+=== RUN   TestDepErrorFallback
+--- PASS: TestDepErrorFallback (0.00s)
+=== RUN   TestUpdateEndpoints
+--- PASS: TestUpdateEndpoints (0.00s)
+=== RUN   TestUpdateNotAssembled
+--- PASS: TestUpdateNotAssembled (0.00s)
+=== RUN   TestGolden
+--- PASS: TestGolden (0.02s)
+=== RUN   TestTimeMarshaling
+--- PASS: TestTimeMarshaling (0.00s)
+=== RUN   TestHubSubscribeLimit
+--- PASS: TestHubSubscribeLimit (0.00s)
+=== RUN   TestHubKickOnFull
+--- PASS: TestHubKickOnFull (0.00s)
+=== RUN   TestHubUnsubscribeIdempotent
+--- PASS: TestHubUnsubscribeIdempotent (0.00s)
+=== RUN   TestHubBroadcastReach
+--- PASS: TestHubBroadcastReach (0.00s)
+=== RUN   TestHubBroadcastNeverBlocks
+--- PASS: TestHubBroadcastNeverBlocks (0.00s)
+=== RUN   TestRulesEndpoint
+--- PASS: TestRulesEndpoint (0.00s)
+=== RUN   TestRulesRefreshEndpoint
+--- PASS: TestRulesRefreshEndpoint (0.00s)
+=== RUN   TestRulesNotAssembled
+--- PASS: TestRulesNotAssembled (0.00s)
+=== RUN   TestSSEHelloAndFirstStatus
+--- PASS: TestSSEHelloAndFirstStatus (0.01s)
+=== RUN   TestSSEAuthRequired
+--- PASS: TestSSEAuthRequired (0.00s)
+=== RUN   TestSSEHeartbeat
+--- PASS: TestSSEHeartbeat (0.06s)
+=== RUN   TestSSEEventDelivery
+--- PASS: TestSSEEventDelivery (0.20s)
+=== RUN   TestSSEGetAndConnFrames
+--- PASS: TestSSEGetAndConnFrames (0.20s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/api	1.673s
+=== RUN   TestDefaultSeeds
+--- PASS: TestDefaultSeeds (0.00s)
+=== RUN   TestExtractCIDRIPs
+--- PASS: TestExtractCIDRIPs (0.00s)
+=== RUN   TestMetaFetch
+--- PASS: TestMetaFetch (0.00s)
+=== RUN   TestResolveDoHAddr
+--- PASS: TestResolveDoHAddr (0.00s)
+=== RUN   TestDoHFetch
+--- PASS: TestDoHFetch (0.00s)
+=== RUN   TestResolveMetaOK
+--- PASS: TestResolveMetaOK (0.08s)
+=== RUN   TestResolveCascadeDoH
+--- PASS: TestResolveCascadeDoH (0.01s)
+=== RUN   TestResolveViaCache
+--- PASS: TestResolveViaCache (0.00s)
+=== RUN   TestSeedDirect
+--- PASS: TestSeedDirect (0.02s)
+=== RUN   TestCacheRoundTrip
+--- PASS: TestCacheRoundTrip (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/bootstrap	1.197s
+=== RUN   TestNotifyDoctorSuppressedWhenBDead
+--- PASS: TestNotifyDoctorSuppressedWhenBDead (0.00s)
+=== RUN   TestNotifyDoctorTripsWhenBAlive
+--- PASS: TestNotifyDoctorTripsWhenBAlive (0.00s)
+=== RUN   TestNotifyDoctorTripsWhenBUnknown
+--- PASS: TestNotifyDoctorTripsWhenBUnknown (0.00s)
+=== RUN   TestNotifyDoctorSuppressionTTLExpiry
+--- PASS: TestNotifyDoctorSuppressionTTLExpiry (0.00s)
+=== RUN   TestNotifyBRecovery
+--- PASS: TestNotifyBRecovery (0.00s)
+=== RUN   TestWindowTripSuppressedWhenBDead
+--- PASS: TestWindowTripSuppressedWhenBDead (0.00s)
+=== RUN   TestRouteClosedAuto
+--- PASS: TestRouteClosedAuto (0.00s)
+=== RUN   TestRouteConnectAlwaysA
+--- PASS: TestRouteConnectAlwaysA (0.00s)
+=== RUN   TestRouteOverrideForceA
+--- PASS: TestRouteOverrideForceA (0.00s)
+=== RUN   TestCircuitTripByTraffic
+--- PASS: TestCircuitTripByTraffic (0.00s)
+=== RUN   TestCircuitNoTripBelowMinSamples
+--- PASS: TestCircuitNoTripBelowMinSamples (0.00s)
+=== RUN   TestCircuitDoctorTripAndRecover
+--- PASS: TestCircuitDoctorTripAndRecover (0.00s)
+=== RUN   TestCircuitHalfOpenFailureBackoff
+--- PASS: TestCircuitHalfOpenFailureBackoff (0.00s)
+=== RUN   TestOpenNotResetByRepeatFault
+--- PASS: TestOpenNotResetByRepeatFault (0.00s)
+=== RUN   TestReportBSkipped
+--- PASS: TestReportBSkipped (0.00s)
+=== RUN   TestFaultInjection403FailsOverWithin30s
+--- PASS: TestFaultInjection403FailsOverWithin30s (0.00s)
+=== RUN   TestFaultInjectionTrafficFailover
+--- PASS: TestFaultInjectionTrafficFailover (0.00s)
+=== RUN   TestRouterConcurrent
+--- PASS: TestRouterConcurrent (0.01s)
+=== RUN   TestKindCanB
+--- PASS: TestKindCanB (0.00s)
+=== RUN   TestStateString
+--- PASS: TestStateString (0.00s)
+=== RUN   TestVerdictHealthy
+--- PASS: TestVerdictHealthy (0.00s)
+=== RUN   TestVerdictNoData
+--- PASS: TestVerdictNoData (0.00s)
+=== RUN   TestVerdictSingleFailureInsufficient
+--- PASS: TestVerdictSingleFailureInsufficient (0.00s)
+=== RUN   TestVerdictSource403
+--- PASS: TestVerdictSource403 (0.00s)
+=== RUN   TestVerdictControlAliveIsOurBug
+--- PASS: TestVerdictControlAliveIsOurBug (0.00s)
+=== RUN   TestVerdictNetworkFault
+--- PASS: TestVerdictNetworkFault (0.00s)
+=== RUN   TestVerdictSourceDown5xx
+--- PASS: TestVerdictSourceDown5xx (0.00s)
+=== RUN   TestSignalToRouteEndToEnd
+--- PASS: TestSignalToRouteEndToEnd (0.00s)
+=== RUN   ExampleRouter_Route
+--- PASS: ExampleRouter_Route (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/channel	1.055s
+=== RUN   Test403
+--- PASS: Test403 (0.01s)
+=== RUN   TestRST
+--- PASS: TestRST (0.00s)
+=== RUN   TestTLSDead
+--- PASS: TestTLSDead (2.00s)
+=== RUN   TestSlow
+--- PASS: TestSlow (10.00s)
+=== RUN   TestBlackhole
+--- PASS: TestBlackhole (2.00s)
+=== RUN   TestHealthy
+--- PASS: TestHealthy (0.00s)
+=== RUN   TestDrill403FailoverSkeleton
+--- PASS: TestDrill403FailoverSkeleton (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/channel/fault	15.204s
+=== RUN   TestConfigValidate
+--- PASS: TestConfigValidate (0.00s)
+=== RUN   TestMergePriorityMatrix
+=== RUN   TestMergePriorityMatrix/listen/显式赢持久化
+=== RUN   TestMergePriorityMatrix/listen/持久化赢默认
+=== RUN   TestMergePriorityMatrix/listen/默认兜底
+=== RUN   TestMergePriorityMatrix/cdn/显式赢持久化
+=== RUN   TestMergePriorityMatrix/cdn/持久化赢默认
+=== RUN   TestMergePriorityMatrix/cdn/默认兜底
+=== RUN   TestMergePriorityMatrix/rules_url/显式赢持久化
+=== RUN   TestMergePriorityMatrix/rules_url/持久化赢默认
+=== RUN   TestMergePriorityMatrix/rules_url/默认兜底
+=== RUN   TestMergePriorityMatrix/rules_interval/显式赢持久化
+=== RUN   TestMergePriorityMatrix/rules_interval/持久化赢默认
+=== RUN   TestMergePriorityMatrix/rules_interval/默认兜底
+=== RUN   TestMergePriorityMatrix/doctor_interval/显式赢持久化
+=== RUN   TestMergePriorityMatrix/doctor_interval/持久化赢默认
+=== RUN   TestMergePriorityMatrix/doctor_interval/managed_默认_1h
+--- PASS: TestMergePriorityMatrix (0.00s)
+    --- PASS: TestMergePriorityMatrix/listen/显式赢持久化 (0.00s)
+    --- PASS: TestMergePriorityMatrix/listen/持久化赢默认 (0.00s)
+    --- PASS: TestMergePriorityMatrix/listen/默认兜底 (0.00s)
+    --- PASS: TestMergePriorityMatrix/cdn/显式赢持久化 (0.00s)
+    --- PASS: TestMergePriorityMatrix/cdn/持久化赢默认 (0.00s)
+    --- PASS: TestMergePriorityMatrix/cdn/默认兜底 (0.00s)
+    --- PASS: TestMergePriorityMatrix/rules_url/显式赢持久化 (0.00s)
+    --- PASS: TestMergePriorityMatrix/rules_url/持久化赢默认 (0.00s)
+    --- PASS: TestMergePriorityMatrix/rules_url/默认兜底 (0.00s)
+    --- PASS: TestMergePriorityMatrix/rules_interval/显式赢持久化 (0.00s)
+    --- PASS: TestMergePriorityMatrix/rules_interval/持久化赢默认 (0.00s)
+    --- PASS: TestMergePriorityMatrix/rules_interval/默认兜底 (0.00s)
+    --- PASS: TestMergePriorityMatrix/doctor_interval/显式赢持久化 (0.00s)
+    --- PASS: TestMergePriorityMatrix/doctor_interval/持久化赢默认 (0.00s)
+    --- PASS: TestMergePriorityMatrix/doctor_interval/managed_默认_1h (0.00s)
+=== RUN   TestMergeDoctorIntervalUnmanagedDefaultOff
+--- PASS: TestMergeDoctorIntervalUnmanagedDefaultOff (0.00s)
+=== RUN   TestMergeDefensiveCorruptPersisted
+=== RUN   TestMergeDefensiveCorruptPersisted/listen_非回环拒绝
+    configglue.go:51: [config] 持久化 listen 非法（"0.0.0.0:1234"），忽略用默认
+=== RUN   TestMergeDefensiveCorruptPersisted/listen_无端口拒绝
+    configglue.go:51: [config] 持久化 listen 非法（"127.0.0.1"），忽略用默认
+=== RUN   TestMergeDefensiveCorruptPersisted/cdn_非法前缀拒绝
+    configglue.go:58: [config] 持久化 cdn 非法（"ftp://x/"），忽略用默认
+=== RUN   TestMergeDefensiveCorruptPersisted/rules_interval_坏_duration
+    configglue.go:73: [config] 持久化 rules_interval 非法（"abc"），忽略用默认
+=== RUN   TestMergeDefensiveCorruptPersisted/doctor_interval_坏_duration
+    configglue.go:82: [config] 持久化 doctor_interval 非法（"xyz"），忽略
+--- PASS: TestMergeDefensiveCorruptPersisted (0.00s)
+    --- PASS: TestMergeDefensiveCorruptPersisted/listen_非回环拒绝 (0.00s)
+    --- PASS: TestMergeDefensiveCorruptPersisted/listen_无端口拒绝 (0.00s)
+    --- PASS: TestMergeDefensiveCorruptPersisted/cdn_非法前缀拒绝 (0.00s)
+    --- PASS: TestMergeDefensiveCorruptPersisted/rules_interval_坏_duration (0.00s)
+    --- PASS: TestMergeDefensiveCorruptPersisted/doctor_interval_坏_duration (0.00s)
+=== RUN   TestPersistedRoundtrip
+--- PASS: TestPersistedRoundtrip (0.30s)
+=== RUN   TestUpdateRunnerIdleFallback
+2026/09/17 06:48:51 [sched] 候选入池 github.com: +21（DoH 1 + meta 20，0.7s）
+2026/09/17 06:48:56 [sched] Preflight 预筛 github.com: 21 候选完成（5.7s）
+--- PASS: TestUpdateRunnerIdleFallback (5.70s)
+=== RUN   TestExePathForSpawnUsesCapturedPath
+--- PASS: TestExePathForSpawnUsesCapturedPath (0.00s)
+=== RUN   TestExePathForSpawnFallsBackToExecutable
+--- PASS: TestExePathForSpawnFallsBackToExecutable (0.00s)
+=== RUN   TestCapturedPathSurvivesRename
+--- PASS: TestCapturedPathSurvivesRename (0.00s)
+=== RUN   TestDiagCmdEndToEndLeakScan
+2026/09/17 06:48:56 诊断包已生成: C:\Users\RUNNER~1\AppData\Local\Temp\TestDiagCmdEndToEndLeakScan779412240\002\diag.zip（已脱敏：token/凭据/家目录/用户名；IP 保留）
+--- PASS: TestDiagCmdEndToEndLeakScan (0.29s)
+=== RUN   TestDiagCmdBareEnvironment
+2026/09/17 06:48:56 诊断包已生成: C:\Users\RUNNER~1\AppData\Local\Temp\TestDiagCmdBareEnvironment1330920800\002\diag.zip（已脱敏：token/凭据/家目录/用户名；IP 保留）
+--- PASS: TestDiagCmdBareEnvironment (0.25s)
+=== RUN   TestElevateDecisionTable
+=== RUN   TestElevateDecisionTable/可写直接继续
+=== RUN   TestElevateDecisionTable/可写忽略提权标记
+=== RUN   TestElevateDecisionTable/不可写+未提权+UAC同意→交棒
+=== RUN   TestElevateDecisionTable/不可写+已提权→报错防循环
+=== RUN   TestElevateDecisionTable/不可写+UAC拒绝→指引
+--- PASS: TestElevateDecisionTable (0.00s)
+    --- PASS: TestElevateDecisionTable/可写直接继续 (0.00s)
+    --- PASS: TestElevateDecisionTable/可写忽略提权标记 (0.00s)
+    --- PASS: TestElevateDecisionTable/不可写+未提权+UAC同意→交棒 (0.00s)
+    --- PASS: TestElevateDecisionTable/不可写+已提权→报错防循环 (0.00s)
+    --- PASS: TestElevateDecisionTable/不可写+UAC拒绝→指引 (0.00s)
+=== RUN   TestProbeWritable
+--- PASS: TestProbeWritable (0.00s)
+=== RUN   TestFetchConns
+--- PASS: TestFetchConns (0.01s)
+=== RUN   TestGitCmdFlow
+[dry-run] 将写入的键:
+  url.https://gh.example.com/t/TOK/https://github.com/.insteadof = https://github.com/
+  url.https://github.com/.pushinsteadof = https://github.com/
+已写入 2 个键（push=直连 ssh=不动）:
+  url.https://gh.example.com/t/TOK/https://github.com/.insteadof = https://github.com/
+  url.https://github.com/.pushinsteadof = https://github.com/
+示例: git clone https://github.com/cli/cli.git → https://gh.example.com/t/TOK/https://github.com/cli/cli.git
+global url.* 改写键:
+  url.https://gh.example.com/t/TOK/https://github.com/.insteadof = https://github.com/
+  url.https://github.com/.pushinsteadof = https://github.com/
+演示: https://github.com/cli/cli.git → https://gh.example.com/t/TOK/https://github.com/cli/cli.git
+快照: 存在（ghydra git disable 可还原）
+已还原 2 个键
+--- PASS: TestGitCmdFlow (0.38s)
+=== RUN   TestGitDisableWithoutSnapshot
+没有 ghydra git 快照（可能未 enable 或已恢复）
+--- PASS: TestGitDisableWithoutSnapshot (0.13s)
+=== RUN   TestSSHSnapshotRoundTripInStore
+--- PASS: TestSSHSnapshotRoundTripInStore (0.20s)
+=== RUN   TestRestoreManagedOnOffNoDB
+--- PASS: TestRestoreManagedOnOffNoDB (0.00s)
+=== RUN   TestRestoreManagedOnOffWithSnapshots
+2026/09/17 06:48:57 git insteadOf 键已还原（2 个）
+2026/09/17 06:48:57 ssh config 已还原（C:\Users\RUNNER~1\AppData\Local\Temp\TestRestoreManagedOnOffWithSnapshots2417606002\001\.ssh\config）
+--- PASS: TestRestoreManagedOnOffWithSnapshots (0.40s)
+=== RUN   TestGuiMainWithoutGuiTagGuides
+--- PASS: TestGuiMainWithoutGuiTagGuides (0.00s)
+=== RUN   TestNoArgsWithoutGuiTagIsUsageError
+ghydra (M1 dev)
+
+用法:
+  ghydra on [--port N] [--mode pac|proxy]             接管系统代理 + 后台拉起 serve
+  ghydra off                                          恢复系统代理 + 停止 serve
+  ghydra serve [--listen ADDR] [--scheduler on|off] [--cdn URL]   前台运行（调试用）
+  ghydra gui                                          桌面面板（-tags gui 构建才内置）
+  ghydra get <url> [-o 文件] [--cdn URL] [--json] [--stats]  下载器（A 择优/B 续传切道）
+  ghydra git enable|disable|status                   insteadOf 集成（fetch→CDN/push→直连）
+  ghydra ssh enable|disable|status                   ssh config 443 写入（22 断 443 通时）
+  ghydra status                                      last_good 持久化观察口
+  ghydra config set <key> <value> | get <key> | list  flags 持久化（P4/D6；重启 daemon 生效）
+  ghydra version                                     版本（自更新自检契约）
+  ghydra update [check|rollback] [--pre] [--allow-downgrade]  自更新（永不自毁）
+  ghydra doctor [--mode direct|proxy|both]          六场景探针+直连对照+分类报告
+  ghydra diag [--days N] [--out 文件.zip]            脱敏诊断包（token/凭据/家目录剔除）
+  ghydra bench [--mode direct|proxy|bootstrap]     六域名存活报告（F6：默认 direct；bootstrap=自举链自检）
+  ghydra poc [--listen ADDR] [--rewrite-sni N]      裸 SNI 转发器（调试工具）
+  ghydra loadtest [--mode sni|connect] [--concurrency N] [--rounds M]  并发压测
+--- PASS: TestNoArgsWithoutGuiTagIsUsageError (0.00s)
+=== RUN   TestOffWaitWaitsForServeDeath
+GHydra 已退出，系统代理已恢复。
+--- PASS: TestOffWaitWaitsForServeDeath (0.52s)
+=== RUN   TestProcAlive
+--- PASS: TestProcAlive (0.25s)
+=== RUN   TestOffExitCode
+--- PASS: TestOffExitCode (0.00s)
+=== RUN   TestServePlainHTTPRouteAB
+--- PASS: TestServePlainHTTPRouteAB (0.06s)
+=== RUN   TestStaticSPAWailsPrefix404
+--- PASS: TestStaticSPAWailsPrefix404 (0.10s)
+=== RUN   TestUpdateRunnerCheckAndCache
+--- PASS: TestUpdateRunnerCheckAndCache (0.01s)
+=== RUN   TestUpdateRunnerApplyStateMachine
+    updateapi_test.go:150: final status: {State:failed Current:dev Target:1.0.1 Progress:0 Error:apply: selfupdate: 下载 checksums: 下载失败（已写 0 字节）: HTTP 404 UpdatedAt:2026-09-17T06:48:58Z}
+--- PASS: TestUpdateRunnerApplyStateMachine (0.11s)
+=== RUN   TestUpdateRunnerNilUpdater
+--- PASS: TestUpdateRunnerNilUpdater (0.00s)
+=== RUN   TestNewUpdateRunnerOverride
+2026/09/17 06:48:59 [sched] 候选入池 github.com: +21（DoH 1 + meta 20，0.2s）
+2026/09/17 06:49:04 [sched] Preflight 预筛 github.com: 21 候选完成（5.2s）
+--- PASS: TestNewUpdateRunnerOverride (5.19s)
+=== RUN   TestTrustHostMap
+--- PASS: TestTrustHostMap (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/cmd/ghydra	14.962s
+?   	github.com/xueweijian/ghydra/engine/cmd/sign-release	[no test files]
+=== RUN   TestBuildZipStructure
+--- PASS: TestBuildZipStructure (0.01s)
+=== RUN   TestBuildServeNotRunning
+--- PASS: TestBuildServeNotRunning (0.01s)
+=== RUN   TestLeakScanZeroHit
+--- PASS: TestLeakScanZeroHit (0.02s)
+=== RUN   TestBuildRejectsUnredactableSecret
+--- PASS: TestBuildRejectsUnredactableSecret (0.00s)
+=== RUN   TestRedactTable
+=== RUN   TestRedactTable/home-路径
+=== RUN   TestRedactTable/home-单独出现
+=== RUN   TestRedactTable/home-多行重复
+=== RUN   TestRedactTable/token-冒号json
+=== RUN   TestRedactTable/token-等号flag
+=== RUN   TestRedactTable/token-secret键
+=== RUN   TestRedactTable/bare-32hex
+=== RUN   TestRedactTable/bare-32hex-大写
+=== RUN   TestRedactTable/url-凭据http
+=== RUN   TestRedactTable/url-凭据socks5
+=== RUN   TestRedactTable/url-无凭据保留
+=== RUN   TestRedactTable/bearer
+=== RUN   TestRedactTable/ip-保留
+=== RUN   TestRedactTable/域名-保留
+=== RUN   TestRedactTable/短hex-保留
+=== RUN   TestRedactTable/40hex-sha不误伤
+=== RUN   TestRedactTable/用户名-普通词不误伤
+--- PASS: TestRedactTable (0.01s)
+    --- PASS: TestRedactTable/home-路径 (0.00s)
+    --- PASS: TestRedactTable/home-单独出现 (0.00s)
+    --- PASS: TestRedactTable/home-多行重复 (0.00s)
+    --- PASS: TestRedactTable/token-冒号json (0.00s)
+    --- PASS: TestRedactTable/token-等号flag (0.00s)
+    --- PASS: TestRedactTable/token-secret键 (0.00s)
+    --- PASS: TestRedactTable/bare-32hex (0.00s)
+    --- PASS: TestRedactTable/bare-32hex-大写 (0.00s)
+    --- PASS: TestRedactTable/url-凭据http (0.00s)
+    --- PASS: TestRedactTable/url-凭据socks5 (0.00s)
+    --- PASS: TestRedactTable/url-无凭据保留 (0.00s)
+    --- PASS: TestRedactTable/bearer (0.00s)
+    --- PASS: TestRedactTable/ip-保留 (0.00s)
+    --- PASS: TestRedactTable/域名-保留 (0.00s)
+    --- PASS: TestRedactTable/短hex-保留 (0.00s)
+    --- PASS: TestRedactTable/40hex-sha不误伤 (0.00s)
+    --- PASS: TestRedactTable/用户名-普通词不误伤 (0.00s)
+=== RUN   TestRedactIdempotent
+--- PASS: TestRedactIdempotent (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/diag	1.100s
+=== RUN   TestBDNSDialUsesDoHAddr
+--- PASS: TestBDNSDialUsesDoHAddr (0.02s)
+=== RUN   TestBDNSRangeThroughDoH
+--- PASS: TestBDNSRangeThroughDoH (0.02s)
+=== RUN   TestBDNSCacheHit
+--- PASS: TestBDNSCacheHit (0.04s)
+=== RUN   TestBDNSFallsBackToSystemDial
+--- PASS: TestBDNSFallsBackToSystemDial (0.01s)
+=== RUN   TestBDNSDropOnAllDialFail
+--- PASS: TestBDNSDropOnAllDialFail (0.03s)
+=== RUN   TestBDNSNegativeCache
+--- PASS: TestBDNSNegativeCache (0.04s)
+=== RUN   TestFastANoSwitch
+--- PASS: TestFastANoSwitch (0.01s)
+=== RUN   TestSlowASwitchToB
+--- PASS: TestSlowASwitchToB (0.71s)
+=== RUN   TestTTFBSlowSwitch
+--- PASS: TestTTFBSlowSwitch (0.71s)
+=== RUN   TestBErrorFallbackToA
+--- PASS: TestBErrorFallbackToA (0.70s)
+=== RUN   TestBMismatchTotalFallback
+--- PASS: TestBMismatchTotalFallback (0.71s)
+=== RUN   TestBETagMismatchFallback
+--- PASS: TestBETagMismatchFallback (0.71s)
+=== RUN   TestSmallFileNoSwitch
+--- PASS: TestSmallFileNoSwitch (0.81s)
+=== RUN   TestAOnlyFailure
+--- PASS: TestAOnlyFailure (0.00s)
+=== RUN   TestBFetcherRewrite
+--- PASS: TestBFetcherRewrite (0.00s)
+=== RUN   TestAFetcherPickAddr
+--- PASS: TestAFetcherPickAddr (0.01s)
+=== RUN   TestOnProgressFastFile
+--- PASS: TestOnProgressFastFile (0.04s)
+=== RUN   TestOnProgressChannelSwitch
+--- PASS: TestOnProgressChannelSwitch (0.71s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/get	6.316s
+=== RUN   TestDesiredPairSemantics
+--- PASS: TestDesiredPairSemantics (0.00s)
+=== RUN   TestDesiredPushViaBNoPushInsteadOf
+--- PASS: TestDesiredPushViaBNoPushInsteadOf (0.00s)
+=== RUN   TestDesiredSSHRewrite
+--- PASS: TestDesiredSSHRewrite (0.00s)
+=== RUN   TestDesiredBadCDN
+--- PASS: TestDesiredBadCDN (0.00s)
+=== RUN   TestEnableDisableRoundTrip
+--- PASS: TestEnableDisableRoundTrip (0.27s)
+=== RUN   TestConflictForeignCDN
+--- PASS: TestConflictForeignCDN (0.07s)
+=== RUN   TestForceOverwritesAndRestores
+--- PASS: TestForceOverwritesAndRestores (0.21s)
+=== RUN   TestSameNameConflictForce
+--- PASS: TestSameNameConflictForce (0.25s)
+=== RUN   TestRewriteDemo
+--- PASS: TestRewriteDemo (0.00s)
+=== RUN   TestEndToEndLSRemoteRewrite
+--- PASS: TestEndToEndLSRemoteRewrite (0.22s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/gitcfg	2.057s
+=== RUN   TestWriteFileAtomicRoundtrip
+--- PASS: TestWriteFileAtomicRoundtrip (0.02s)
+=== RUN   TestWriteFileAtomicNewDir
+--- PASS: TestWriteFileAtomicNewDir (0.00s)
+=== RUN   TestRenameAtomicReplaceExisting
+--- PASS: TestRenameAtomicReplaceExisting (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/internal/fsx	1.059s
+=== RUN   TestSignDetachedRoundtripWithOfficialTool
+    minisign_test.go:16: 无官方 minisign 工具（CI 跳过，本地必跑）
+--- SKIP: TestSignDetachedRoundtripWithOfficialTool (0.03s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/internal/minisign	1.082s
+?   	github.com/xueweijian/ghydra/engine/internal/testutil	[no test files]
+=== RUN   TestModeCDNURLRewrite
+--- PASS: TestModeCDNURLRewrite (0.02s)
+=== RUN   TestModeCDNRequiresPrefix
+--- PASS: TestModeCDNRequiresPrefix (0.00s)
+=== RUN   TestModeCDNRunSkipsSSH
+--- PASS: TestModeCDNRunSkipsSSH (0.02s)
+=== RUN   TestMaybeSlowBoundaries
+--- PASS: TestMaybeSlowBoundaries (0.00s)
+=== RUN   TestRunHTTPSlowEndpoint
+--- PASS: TestRunHTTPSlowEndpoint (2.21s)
+=== RUN   TestClassifyRootCauses
+=== RUN   TestClassifyRootCauses/timeout
+=== RUN   TestClassifyRootCauses/dns
+=== RUN   TestClassifyRootCauses/tcp
+=== RUN   TestClassifyRootCauses/tls
+=== RUN   TestClassifyRootCauses/proxy
+=== RUN   TestClassifyRootCauses/403
+=== RUN   TestClassifyRootCauses/503
+--- PASS: TestClassifyRootCauses (0.00s)
+    --- PASS: TestClassifyRootCauses/timeout (0.00s)
+    --- PASS: TestClassifyRootCauses/dns (0.00s)
+    --- PASS: TestClassifyRootCauses/tcp (0.00s)
+    --- PASS: TestClassifyRootCauses/tls (0.00s)
+    --- PASS: TestClassifyRootCauses/proxy (0.00s)
+    --- PASS: TestClassifyRootCauses/403 (0.00s)
+    --- PASS: TestClassifyRootCauses/503 (0.00s)
+=== RUN   TestRunEndpointsDirectAndTrace
+--- PASS: TestRunEndpointsDirectAndTrace (0.01s)
+=== RUN   TestRunProxyConnect
+--- PASS: TestRunProxyConnect (0.00s)
+=== RUN   TestGitHubEndpointShape
+--- PASS: TestGitHubEndpointShape (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/probe	3.318s
+=== RUN   TestServerHTTPHandler
+2026/09/17 06:48:56 http: TLS handshake error from 127.0.0.1:51751: unexpected EOF
+--- PASS: TestServerHTTPHandler (0.04s)
+=== RUN   TestRaceDeadAndAlivePicksWinner
+--- PASS: TestRaceDeadAndAlivePicksWinner (0.30s)
+=== RUN   TestRaceAllDeadFast502
+--- PASS: TestRaceAllDeadFast502 (0.30s)
+=== RUN   TestRaceCancelledNotPunished
+--- PASS: TestRaceCancelledNotPunished (0.00s)
+=== RUN   TestRaceWarmFastPath
+--- PASS: TestRaceWarmFastPath (0.00s)
+=== RUN   TestNewListenerBasic
+--- PASS: TestNewListenerBasic (0.00s)
+=== RUN   TestNewListenerRejectsBadAddr
+--- PASS: TestNewListenerRejectsBadAddr (0.00s)
+=== RUN   TestListenerConcurrentAccept
+--- PASS: TestListenerConcurrentAccept (0.03s)
+=== RUN   TestListenerReuseAddr
+    tunnel_test.go:105: windows 不设 SO_REUSEADDR
+--- SKIP: TestListenerReuseAddr (0.00s)
+=== RUN   TestTunnelAccelerated
+--- PASS: TestTunnelAccelerated (0.01s)
+=== RUN   TestTunnelPassthrough
+--- PASS: TestTunnelPassthrough (0.01s)
+=== RUN   TestTunnelRejectsNonConnect
+--- PASS: TestTunnelRejectsNonConnect (0.00s)
+=== RUN   TestTunnelNon443BypassesSelector
+2026/09/17 06:48:57 http: TLS handshake error from 127.0.0.1:51902: EOF
+--- PASS: TestTunnelNon443BypassesSelector (0.00s)
+=== RUN   TestTunnelDialFailure
+--- PASS: TestTunnelDialFailure (0.00s)
+=== RUN   TestTunnelEarlyData
+--- PASS: TestTunnelEarlyData (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/proxy	1.761s
+=== RUN   TestAtomicRoundtrip
+--- PASS: TestAtomicRoundtrip (0.02s)
+=== RUN   TestAtomicCrashResidue
+--- PASS: TestAtomicCrashResidue (0.04s)
+=== RUN   TestAtomicMissingSig
+--- PASS: TestAtomicMissingSig (0.02s)
+=== RUN   TestAtomicConcurrentReadWrite
+--- PASS: TestAtomicConcurrentReadWrite (1.01s)
+=== RUN   TestEmbeddedFloor
+--- PASS: TestEmbeddedFloor (0.00s)
+=== RUN   TestOfficialVectors
+--- PASS: TestOfficialVectors (0.00s)
+=== RUN   TestOfficialVectorTamper
+--- PASS: TestOfficialVectorTamper (0.00s)
+=== RUN   TestTrustedCommentTamper
+--- PASS: TestTrustedCommentTamper (0.00s)
+=== RUN   TestUntrustedCommentFree
+--- PASS: TestUntrustedCommentFree (0.00s)
+=== RUN   TestKeyIDMismatch
+--- PASS: TestKeyIDMismatch (0.00s)
+=== RUN   TestMalformedSig
+--- PASS: TestMalformedSig (0.00s)
+=== RUN   TestParsePublicKey
+--- PASS: TestParsePublicKey (0.00s)
+=== RUN   TestPACContainsAllDomains
+--- PASS: TestPACContainsAllDomains (0.00s)
+=== RUN   TestPACLoopbackDirect
+--- PASS: TestPACLoopbackDirect (0.00s)
+=== RUN   TestPACEmptyDomains
+--- PASS: TestPACEmptyDomains (0.00s)
+=== RUN   TestProviderEmbeddedFloor
+--- PASS: TestProviderEmbeddedFloor (0.00s)
+=== RUN   TestProviderDiskLoad
+--- PASS: TestProviderDiskLoad (0.08s)
+=== RUN   TestProviderDiskTamperedFallsBack
+--- PASS: TestProviderDiskTamperedFallsBack (0.08s)
+=== RUN   TestProviderDiskSchemaRejectFallsBack
+--- PASS: TestProviderDiskSchemaRejectFallsBack (0.02s)
+=== RUN   TestApplyRemoteUpgrade
+--- PASS: TestApplyRemoteUpgrade (0.05s)
+=== RUN   TestApplyRollbackRejected
+--- PASS: TestApplyRollbackRejected (0.02s)
+=== RUN   TestApplyFastForwardRejected
+--- PASS: TestApplyFastForwardRejected (0.01s)
+=== RUN   TestApplyForgeryRejected
+--- PASS: TestApplyForgeryRejected (0.00s)
+=== RUN   TestApplyBadSchemaRejected
+--- PASS: TestApplyBadSchemaRejected (0.00s)
+=== RUN   TestSnapshotConcurrentReadApply
+--- PASS: TestSnapshotConcurrentReadApply (0.32s)
+=== RUN   TestSnapshotStaleNow
+--- PASS: TestSnapshotStaleNow (0.02s)
+=== RUN   TestProviderSeedsExposed
+--- PASS: TestProviderSeedsExposed (0.02s)
+=== RUN   TestRefresherSeenMaxRestoreBlocksReplay
+--- PASS: TestRefresherSeenMaxRestoreBlocksReplay (0.02s)
+=== RUN   TestRefresherHTTPEndToEnd
+--- PASS: TestRefresherHTTPEndToEnd (0.03s)
+=== RUN   TestProviderSetSeenMax
+--- PASS: TestProviderSetSeenMax (0.00s)
+=== RUN   TestRefresherSchedule
+--- PASS: TestRefresherSchedule (0.06s)
+=== RUN   TestRefresherBackoff
+--- PASS: TestRefresherBackoff (0.02s)
+=== RUN   TestRefresherBackoffRestore
+--- PASS: TestRefresherBackoffRestore (0.02s)
+=== RUN   TestRefresherManualBeatsBackoff
+--- PASS: TestRefresherManualBeatsBackoff (0.01s)
+=== RUN   TestRefresherSingleFlight
+--- PASS: TestRefresherSingleFlight (0.02s)
+=== RUN   TestRefresherResultClasses
+=== RUN   TestRefresherResultClasses/ok
+=== RUN   TestRefresherResultClasses/fetch_err
+=== RUN   TestRefresherResultClasses/size_json
+=== RUN   TestRefresherResultClasses/sig_rejected
+=== RUN   TestRefresherResultClasses/rollback
+=== RUN   TestRefresherResultClasses/fast_forward
+=== RUN   TestRefresherResultClasses/schema_rejected
+--- PASS: TestRefresherResultClasses (1.17s)
+    --- PASS: TestRefresherResultClasses/ok (0.02s)
+    --- PASS: TestRefresherResultClasses/fetch_err (0.00s)
+    --- PASS: TestRefresherResultClasses/size_json (0.00s)
+    --- PASS: TestRefresherResultClasses/sig_rejected (0.00s)
+    --- PASS: TestRefresherResultClasses/rollback (0.01s)
+    --- PASS: TestRefresherResultClasses/fast_forward (0.00s)
+    --- PASS: TestRefresherResultClasses/schema_rejected (1.13s)
+=== RUN   TestRefresherSourceOrder
+=== RUN   TestRefresherSourceOrder/A_first
+=== RUN   TestRefresherSourceOrder/A_dead_B_serves
+=== RUN   TestRefresherSourceOrder/both_dead
+--- PASS: TestRefresherSourceOrder (0.04s)
+    --- PASS: TestRefresherSourceOrder/A_first (0.02s)
+    --- PASS: TestRefresherSourceOrder/A_dead_B_serves (0.02s)
+    --- PASS: TestRefresherSourceOrder/both_dead (0.00s)
+=== RUN   TestRefresherSigSize
+--- PASS: TestRefresherSigSize (0.01s)
+=== RUN   TestRefresherOnApply
+--- PASS: TestRefresherOnApply (0.02s)
+=== RUN   TestMatch
+--- PASS: TestMatch (0.00s)
+=== RUN   TestMatchEmptyMatcher
+--- PASS: TestMatchEmptyMatcher (0.00s)
+=== RUN   TestNormalize
+--- PASS: TestNormalize (0.00s)
+=== RUN   TestNewIgnoresInvalid
+--- PASS: TestNewIgnoresInvalid (0.00s)
+=== RUN   TestDomainsSnapshot
+--- PASS: TestDomainsSnapshot (0.00s)
+=== RUN   TestParseRulesHappy
+--- PASS: TestParseRulesHappy (0.00s)
+=== RUN   TestRejectUnknownFields
+--- PASS: TestRejectUnknownFields (0.00s)
+=== RUN   TestRejectDuplicateKeys
+--- PASS: TestRejectDuplicateKeys (0.00s)
+=== RUN   TestRejectTrailingData
+--- PASS: TestRejectTrailingData (0.00s)
+=== RUN   TestRejectSchemaVersionDrift
+--- PASS: TestRejectSchemaVersionDrift (0.00s)
+=== RUN   TestRejectVersionBounds
+--- PASS: TestRejectVersionBounds (0.00s)
+=== RUN   TestRejectTimestamps
+--- PASS: TestRejectTimestamps (0.00s)
+=== RUN   TestRejectDomainPoison
+--- PASS: TestRejectDomainPoison (0.00s)
+=== RUN   TestRejectCDNPoison
+--- PASS: TestRejectCDNPoison (0.00s)
+=== RUN   TestRejectSeedIPPoison
+--- PASS: TestRejectSeedIPPoison (0.00s)
+=== RUN   TestTooLarge
+--- PASS: TestTooLarge (0.00s)
+=== RUN   TestDecideVersion
+--- PASS: TestDecideVersion (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/rules	4.287s
+=== RUN   TestProbeBestProbesNew
+--- PASS: TestProbeBestProbesNew (0.00s)
+=== RUN   TestProbeBestTopNWithNew
+--- PASS: TestProbeBestTopNWithNew (0.00s)
+=== RUN   TestSelectorRacingIntegration
+--- PASS: TestSelectorRacingIntegration (0.31s)
+=== RUN   TestPickValidatedOnlyVerified
+--- PASS: TestPickValidatedOnlyVerified (0.00s)
+=== RUN   TestPickNExcludesAndPrefersActive
+--- PASS: TestPickNExcludesAndPrefersActive (0.00s)
+=== RUN   TestPickNExhaustedEmpty
+--- PASS: TestPickNExhaustedEmpty (0.00s)
+=== RUN   TestReleaseCandidates
+--- PASS: TestReleaseCandidates (0.00s)
+=== RUN   TestStatsColdWarm
+--- PASS: TestStatsColdWarm (0.00s)
+=== RUN   TestEWMAScoreColdStart
+--- PASS: TestEWMAScoreColdStart (0.00s)
+=== RUN   TestEWMAScoreWeights
+--- PASS: TestEWMAScoreWeights (0.00s)
+=== RUN   TestEWMAConvergence
+--- PASS: TestEWMAConvergence (0.00s)
+=== RUN   TestFailurePullsRTT
+--- PASS: TestFailurePullsRTT (0.00s)
+=== RUN   TestStateMachineHappyPath
+--- PASS: TestStateMachineHappyPath (0.00s)
+=== RUN   TestStateMachineCooldownThenRecover
+--- PASS: TestStateMachineCooldownThenRecover (0.00s)
+=== RUN   TestStateMachineQuarantine
+--- PASS: TestStateMachineQuarantine (0.00s)
+=== RUN   TestStickyWindow
+--- PASS: TestStickyWindow (0.00s)
+=== RUN   TestStickyBrokenByFailure
+--- PASS: TestStickyBrokenByFailure (0.00s)
+=== RUN   TestRotateSpreads
+--- PASS: TestRotateSpreads (0.00s)
+=== RUN   TestRotateReuseWhenAllProbing
+--- PASS: TestRotateReuseWhenAllProbing (0.00s)
+=== RUN   TestPoolExhaustionFallsBack
+--- PASS: TestPoolExhaustionFallsBack (0.00s)
+=== RUN   TestPoolExhaustionResolves
+--- PASS: TestPoolExhaustionResolves (0.00s)
+=== RUN   TestPreflightKillsDeadCandidates
+--- PASS: TestPreflightKillsDeadCandidates (0.00s)
+=== RUN   TestProbeBest
+--- PASS: TestProbeBest (0.00s)
+=== RUN   TestSelectorSSH443IsPassThrough
+--- PASS: TestSelectorSSH443IsPassThrough (0.00s)
+=== RUN   TestSelectorEventTranslation
+--- PASS: TestSelectorEventTranslation (0.00s)
+=== RUN   TestSelectorHandshakeDeadHeuristic
+--- PASS: TestSelectorHandshakeDeadHeuristic (0.00s)
+=== RUN   TestSelectorNormalBrowsingNotPunished
+--- PASS: TestSelectorNormalBrowsingNotPunished (0.00s)
+=== RUN   TestPreflightUsesDialHost
+--- PASS: TestPreflightUsesDialHost (0.00s)
+=== RUN   TestSchedulerConcurrent
+--- PASS: TestSchedulerConcurrent (0.02s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/sched	1.388s
+=== RUN   TestParseChecksums
+--- PASS: TestParseChecksums (0.00s)
+=== RUN   TestParseChecksumsMalformed
+--- PASS: TestParseChecksumsMalformed (0.00s)
+=== RUN   TestVerifyArchiveChecksum
+--- PASS: TestVerifyArchiveChecksum (0.00s)
+=== RUN   TestVerifyChecksumsSignature
+--- PASS: TestVerifyChecksumsSignature (0.01s)
+=== RUN   TestBadKeyOverrideNoPanic
+=== RUN   TestBadKeyOverrideNoPanic/malformed
+=== RUN   TestBadKeyOverrideNoPanic/missing-file
+--- PASS: TestBadKeyOverrideNoPanic (0.00s)
+    --- PASS: TestBadKeyOverrideNoPanic/malformed (0.00s)
+    --- PASS: TestBadKeyOverrideNoPanic/missing-file (0.00s)
+=== RUN   TestApplyPlanPreflightRejectsBadKey
+--- PASS: TestApplyPlanPreflightRejectsBadKey (0.00s)
+=== RUN   TestParseLatestRelease
+--- PASS: TestParseLatestRelease (0.00s)
+=== RUN   TestSelectAsset
+--- PASS: TestSelectAsset (0.00s)
+=== RUN   TestSelectAssetVersionGate
+--- PASS: TestSelectAssetVersionGate (0.00s)
+=== RUN   TestSelectAssetPrerelease
+--- PASS: TestSelectAssetPrerelease (0.00s)
+=== RUN   TestSelectAssetNoMinisig
+--- PASS: TestSelectAssetNoMinisig (0.00s)
+=== RUN   TestAssetDomainAllowed
+--- PASS: TestAssetDomainAllowed (0.00s)
+=== RUN   TestSelectAssetRejectsForeignDomain
+--- PASS: TestSelectAssetRejectsForeignDomain (0.00s)
+=== RUN   TestSelectAssetSkipsBadVersion
+--- PASS: TestSelectAssetSkipsBadVersion (0.00s)
+=== RUN   TestSelectAssetVariantGUI
+--- PASS: TestSelectAssetVariantGUI (0.00s)
+=== RUN   TestParseVersion
+--- PASS: TestParseVersion (0.00s)
+=== RUN   TestVersionCompare
+--- PASS: TestVersionCompare (0.00s)
+=== RUN   TestVersionString
+--- PASS: TestVersionString (0.00s)
+=== RUN   TestStateRoundtrip
+--- PASS: TestStateRoundtrip (0.01s)
+=== RUN   TestStateLoadMissing
+--- PASS: TestStateLoadMissing (0.00s)
+=== RUN   TestStateLoadCorrupt
+--- PASS: TestStateLoadCorrupt (0.00s)
+=== RUN   TestStateSaveAtomic
+--- PASS: TestStateSaveAtomic (0.02s)
+=== RUN   TestStateSelfCheckGate
+    state_test.go:77: pending 未确认 → 自检（正确路径）
+--- PASS: TestStateSelfCheckGate (0.00s)
+=== RUN   TestStateBootFailuresRollback
+--- PASS: TestStateBootFailuresRollback (0.00s)
+=== RUN   TestStateConfirm
+--- PASS: TestStateConfirm (0.00s)
+=== RUN   TestStateBadVersionMemory
+--- PASS: TestStateBadVersionMemory (0.00s)
+=== RUN   TestPlanSwapNormal
+--- PASS: TestPlanSwapNormal (0.00s)
+=== RUN   TestPlanSwapOldResidue
+--- PASS: TestPlanSwapOldResidue (0.00s)
+=== RUN   TestPlanSwapStagingMissing
+--- PASS: TestPlanSwapStagingMissing (0.00s)
+=== RUN   TestCrashRecoveryRestoreOld
+--- PASS: TestCrashRecoveryRestoreOld (0.00s)
+=== RUN   TestCrashRecoveryNoopWhenHealthy
+--- PASS: TestCrashRecoveryNoopWhenHealthy (0.01s)
+=== RUN   TestRollbackSwap
+--- PASS: TestRollbackSwap (0.00s)
+=== RUN   TestRollbackSwapWithoutOld
+--- PASS: TestRollbackSwapWithoutOld (0.00s)
+=== RUN   TestRecoverFromCrashStagingFailureNonBlocking
+    swap_test.go:183: Windows 需提权进程造 ACL 残留（CI Linux 覆盖此路径）
+--- SKIP: TestRecoverFromCrashStagingFailureNonBlocking (0.00s)
+=== RUN   TestRecoverFromCrashBadCleanupNonBlocking
+2026/09/17 06:49:02 [selfupdate] .bad 清扫跳过（残留无害）: remove C:\Users\RUNNER~1\AppData\Local\Temp\TestRecoverFromCrashBadCleanupNonBlocking2485709437\001\ghydra.exe.bad: The directory is not empty.
+--- PASS: TestRecoverFromCrashBadCleanupNonBlocking (0.04s)
+=== RUN   TestApplyHappyPath
+    update_test.go:201: [selfupdate] 已交换到 v1.0.1（1 个文件），进入自检
+    update_test.go:201: [selfupdate] v1.0.1 更新完成
+--- PASS: TestApplyHappyPath (1.54s)
+=== RUN   TestApplyDaemonReconcile
+    update_test.go:201: [selfupdate] 已交换到 v1.0.1（1 个文件），进入自检
+    update_test.go:201: [selfupdate] v1.0.1 更新完成（daemon 已重启对账）
+--- PASS: TestApplyDaemonReconcile (1.83s)
+=== RUN   TestApplyTamperAsset
+--- PASS: TestApplyTamperAsset (1.43s)
+=== RUN   TestApplyTamperChecksums
+--- PASS: TestApplyTamperChecksums (1.28s)
+=== RUN   TestApplySizeMismatch
+--- PASS: TestApplySizeMismatch (1.14s)
+=== RUN   TestCheckNoDowngradeByDefault
+--- PASS: TestCheckNoDowngradeByDefault (1.02s)
+=== RUN   TestApplyBrokenBinaryRollsBack
+    update_test.go:201: [selfupdate] 已交换到 v1.0.1（1 个文件），进入自检
+    update_test.go:201: [selfupdate] 回滚 1.0.1: 自检失败: 子进程 ghydra.exe version: exit status 1（输出: ）
+--- PASS: TestApplyBrokenBinaryRollsBack (1.34s)
+=== RUN   TestBootHookTripleFailureRollsBack
+    update_test.go:201: [selfupdate] 启动自检失败: 子进程 ghydra.exe version: exit status 1（输出: ）
+    update_test.go:201: [selfupdate] 启动自检失败: 子进程 ghydra.exe version: exit status 1（输出: ）
+    update_test.go:201: [selfupdate] 启动自检失败: 子进程 ghydra.exe version: exit status 1（输出: ）
+    update_test.go:201: [selfupdate] 连续 3 次失败，自动回滚（拍板 #2）
+    update_test.go:201: [selfupdate] 回滚 1.0.1: 子进程 ghydra.exe version: exit status 1（输出: ）
+--- PASS: TestBootHookTripleFailureRollsBack (0.09s)
+=== RUN   TestBootHookCrashRecovery
+=== RUN   TestBootHookCrashRecovery/中断于首rename后
+    update_test.go:201: [selfupdate] 检测到上次更新中断（已恢复旧版），v1.0.1 标记跳过
+=== RUN   TestBootHookCrashRecovery/staging残留无状态
+=== RUN   TestBootHookCrashRecovery/健康带old凭证
+--- PASS: TestBootHookCrashRecovery (0.05s)
+    --- PASS: TestBootHookCrashRecovery/中断于首rename后 (0.04s)
+    --- PASS: TestBootHookCrashRecovery/staging残留无状态 (0.01s)
+    --- PASS: TestBootHookCrashRecovery/健康带old凭证 (0.01s)
+=== RUN   TestBootHookConfirmsAfterCrash
+    update_test.go:201: [selfupdate] v1.0.1 自检通过
+--- PASS: TestBootHookConfirmsAfterCrash (0.05s)
+=== RUN   TestManualRollback
+    update_test.go:201: [selfupdate] 已交换到 v1.0.1（1 个文件），进入自检
+    update_test.go:201: [selfupdate] v1.0.1 更新完成
+    update_test.go:201: [selfupdate] 已回滚到上一版（.old 凭证）
+--- PASS: TestManualRollback (1.30s)
+=== RUN   TestApplyServeModePendingBoot
+    update_test.go:201: [selfupdate] 已交换到 v1.0.1（1 个文件），进入自检
+    update_test.go:201: [selfupdate] v1.0.1 已交换（serve 模式：pending 留给继任进程确认）
+--- PASS: TestApplyServeModePendingBoot (1.29s)
+=== RUN   TestApplyCleansStagingOnSuccess
+    update_test.go:201: [selfupdate] 已交换到 v1.0.1（1 个文件），进入自检
+    update_test.go:201: [selfupdate] v1.0.1 更新完成
+--- PASS: TestApplyCleansStagingOnSuccess (1.31s)
+=== RUN   TestApplyServeModeCleansStaging
+    update_test.go:201: [selfupdate] 已交换到 v1.0.1（1 个文件），进入自检
+    update_test.go:201: [selfupdate] v1.0.1 已交换（serve 模式：pending 留给继任进程确认）
+--- PASS: TestApplyServeModeCleansStaging (1.28s)
+=== RUN   TestApplyCleansStagingOnVerifyFailure
+--- PASS: TestApplyCleansStagingOnVerifyFailure (1.00s)
+=== RUN   TestApplyDirNotWritable
+--- PASS: TestApplyDirNotWritable (0.99s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/selfupdate	20.029s
+=== RUN   TestParseFixtures
+=== RUN   TestParseFixtures/ch_normal_tls13.hex
+=== RUN   TestParseFixtures/ch_tls12_sni.hex
+=== RUN   TestParseFixtures/ch_no_sni.hex
+=== RUN   TestParseFixtures/ch_session_id.hex
+=== RUN   TestParseFixtures/ch_multi_ext_sni_middle.hex
+=== RUN   TestParseFixtures/ch_long_sni.hex
+--- PASS: TestParseFixtures (0.00s)
+    --- PASS: TestParseFixtures/ch_normal_tls13.hex (0.00s)
+    --- PASS: TestParseFixtures/ch_tls12_sni.hex (0.00s)
+    --- PASS: TestParseFixtures/ch_no_sni.hex (0.00s)
+    --- PASS: TestParseFixtures/ch_session_id.hex (0.00s)
+    --- PASS: TestParseFixtures/ch_multi_ext_sni_middle.hex (0.00s)
+    --- PASS: TestParseFixtures/ch_long_sni.hex (0.00s)
+=== RUN   TestRecordIntact
+--- PASS: TestRecordIntact (0.00s)
+=== RUN   TestRewriteAndReparse
+--- PASS: TestRewriteAndReparse (0.00s)
+=== RUN   TestRewriteNoSNI
+--- PASS: TestRewriteNoSNI (0.00s)
+=== RUN   TestRewriteInvalidValue
+--- PASS: TestRewriteInvalidValue (0.00s)
+=== RUN   TestTruncatedInputs
+--- PASS: TestTruncatedInputs (0.01s)
+=== RUN   TestGarbageInputs
+--- PASS: TestGarbageInputs (0.00s)
+=== RUN   TestStreamHasFollowingBytes
+--- PASS: TestStreamHasFollowingBytes (0.00s)
+=== RUN   TestMultiRecordCH
+--- PASS: TestMultiRecordCH (0.00s)
+=== RUN   TestRewriteMultiRecord
+--- PASS: TestRewriteMultiRecord (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/sni	1.063s
+=== RUN   TestEnablePrependFresh
+--- PASS: TestEnablePrependFresh (0.00s)
+=== RUN   TestEnableIdempotentReplace
+--- PASS: TestEnableIdempotentReplace (0.00s)
+=== RUN   TestEnableConflictRefused
+--- PASS: TestEnableConflictRefused (0.00s)
+=== RUN   TestEnableAliasMode
+--- PASS: TestEnableAliasMode (0.00s)
+=== RUN   TestDryRunNoWrite
+--- PASS: TestDryRunNoWrite (0.00s)
+=== RUN   TestDisableRestoreBytes
+--- PASS: TestDisableRestoreBytes (0.00s)
+=== RUN   TestDisableRemoveByMarker
+--- PASS: TestDisableRemoveByMarker (0.00s)
+=== RUN   TestDisableNoop
+--- PASS: TestDisableNoop (0.00s)
+=== RUN   TestHasGithubHostVariants
+--- PASS: TestHasGithubHostVariants (0.00s)
+=== RUN   TestCorruptBlock
+--- PASS: TestCorruptBlock (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/sshcfg	1.079s
+=== RUN   TestConfigSetGet
+--- PASS: TestConfigSetGet (0.25s)
+=== RUN   TestConfigUpdatedAtMonotonic
+--- PASS: TestConfigUpdatedAtMonotonic (0.22s)
+=== RUN   TestConfigListDelete
+--- PASS: TestConfigListDelete (0.31s)
+=== RUN   TestConfigEmptyKeyRejected
+--- PASS: TestConfigEmptyKeyRejected (0.20s)
+=== RUN   TestDownloadStatsFailedSegVisible
+    download_fail_test.go:65: B: {Channel: Runs:0 Attempts:0 Failures:0 MedianBPS:0 MaxBPS:0 TotalMB:0}
+--- FAIL: TestDownloadStatsFailedSegVisible (0.32s)
+=== RUN   TestAppendDownloadAndStats
+--- PASS: TestAppendDownloadAndStats (0.41s)
+=== RUN   TestAppendDownloadOKSemantics
+--- PASS: TestAppendDownloadOKSemantics (0.28s)
+=== RUN   TestShortURL
+--- PASS: TestShortURL (0.00s)
+=== RUN   TestRulesStateRoundTrip
+--- PASS: TestRulesStateRoundTrip (0.03s)
+=== RUN   TestRulesSeenMaxIndependent
+--- PASS: TestRulesSeenMaxIndependent (0.04s)
+=== RUN   TestRulesStateZeroTimes
+--- PASS: TestRulesStateZeroTimes (0.03s)
+=== RUN   TestStoreBasics
+--- PASS: TestStoreBasics (0.27s)
+=== RUN   TestLastGoodScoreUpdateCondition
+--- PASS: TestLastGoodScoreUpdateCondition (0.34s)
+=== RUN   TestStoreRestartRecovery
+--- PASS: TestStoreRestartRecovery (0.18s)
+=== RUN   TestQueueFullDoesNotBlock
+--- PASS: TestQueueFullDoesNotBlock (0.63s)
+=== RUN   TestSnapshotRoundtrip
+--- PASS: TestSnapshotRoundtrip (0.23s)
+=== RUN   TestLoadTakeoverState
+--- PASS: TestLoadTakeoverState (0.20s)
+=== RUN   TestDoctorRecordAndSummary
+--- PASS: TestDoctorRecordAndSummary (0.08s)
+FAIL
+FAIL	github.com/xueweijian/ghydra/engine/store	4.137s
+=== RUN   TestSettingSemantics
+--- PASS: TestSettingSemantics (0.00s)
+=== RUN   TestSettingJSONRoundtrip
+--- PASS: TestSettingJSONRoundtrip (0.00s)
+=== RUN   TestCurrentNoDesktopLinux
+    sysproxy_test.go:65: 仅 Linux
+--- SKIP: TestCurrentNoDesktopLinux (0.00s)
+=== RUN   TestApplyZeroClears
+    sysproxy_test.go:78: CI 上不清真实系统代理设置；真机验收覆盖
+--- SKIP: TestApplyZeroClears (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/engine/sysproxy	1.140s
+?   	github.com/xueweijian/ghydra/internal/guiapp	[no test files]
+=== RUN   TestRestartExplicitIntent
+--- PASS: TestRestartExplicitIntent (0.00s)
+=== RUN   TestRestartWithPendingSingleSpawn
+--- PASS: TestRestartWithPendingSingleSpawn (0.00s)
+=== RUN   TestRestartWhileAliveDefersToDeath
+--- PASS: TestRestartWhileAliveDefersToDeath (0.00s)
+=== RUN   TestHelperServeProcess
+--- PASS: TestHelperServeProcess (0.00s)
+=== RUN   TestSpawnDetachedEndToEnd
+--- PASS: TestSpawnDetachedEndToEnd (0.15s)
+=== RUN   TestLoadServeStateGarbage
+--- PASS: TestLoadServeStateGarbage (0.00s)
+=== RUN   TestDecide
+--- PASS: TestDecide (0.00s)
+=== RUN   TestStepStartupEnsureDaemon
+--- PASS: TestStepStartupEnsureDaemon (0.00s)
+=== RUN   TestStepSuccessorOnPendingDeath
+--- PASS: TestStepSuccessorOnPendingDeath (0.00s)
+=== RUN   TestStepOffGuardNoResurrection
+--- PASS: TestStepOffGuardNoResurrection (0.00s)
+=== RUN   TestStepAlivePhases
+--- PASS: TestStepAlivePhases (0.00s)
+=== RUN   TestStepGiveUpAfterHealthyWait
+--- PASS: TestStepGiveUpAfterHealthyWait (0.05s)
+=== RUN   TestStepSpawnErrorFails
+--- PASS: TestStepSpawnErrorFails (0.00s)
+PASS
+ok  	github.com/xueweijian/ghydra/internal/supervisor	1.325s
+?   	github.com/xueweijian/ghydra/scripts/crosscheck	[no test files]
+?   	github.com/xueweijian/ghydra/scripts/fakesite	[no test files]
+?   	github.com/xueweijian/ghydra/scripts/releasesrv	[no test files]
+?   	github.com/xueweijian/ghydra/scripts/sign-rules	[no test files]
+FAIL
