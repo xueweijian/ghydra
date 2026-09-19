@@ -330,7 +330,8 @@ func TestApplyHappyPath(t *testing.T) {
 	if stops, starts := h.daemon.counts(); stops != 0 || starts != 0 {
 		t.Errorf("无 daemon 场景不应编排重启: stops=%d starts=%d", stops, starts)
 	}
-	// staging 清理留给下次 BootHook；此处不残留 minisig/checksums 于安装根
+	// v1.0.3 PR2 起收尾即清（TestApplyCleansStagingOnSuccess 锁定）；
+	// 此处再断言杂物不落在安装根
 	for _, name := range []string{"checksums.txt", "checksums.txt.minisig"} {
 		if _, err := os.Stat(filepath.Join(h.dir, name)); err == nil {
 			t.Errorf("%s 不应落在安装根", name)
@@ -665,5 +666,76 @@ func TestApplyServeModePendingBoot(t *testing.T) {
 	// old 凭证在场（继任启动失败时 rollback 凭证完整）
 	if _, err := os.Stat(filepath.Join(h.dir, OldName)); err != nil {
 		t.Errorf("old 凭证应在场: %v", err)
+	}
+}
+
+// ---- v1.0.3 PR2：staging 生命周期 ----
+
+// apply 全成功后 staging 不留杂物（v1.0.2 真机：checksums/minisig/zip
+// 三件套永留，下次非提权清扫再撞 ACL——恶性循环）。
+func TestApplyCleansStagingOnSuccess(t *testing.T) {
+	h := newHarness(t)
+	h.publishRelease(t, false, false, false)
+
+	plan := h.check(t, SelectOpts{})
+	if err := h.updater.ApplyPlan(context.Background(), plan); err != nil {
+		t.Fatalf("ApplyPlan: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(h.dir, StagingDirName)); !os.IsNotExist(err) {
+		t.Errorf("apply 成功后 staging 应清理；stat err=%v", err)
+	}
+}
+
+// ServeMode pending 分支同样清理（swap 已完成，staging 只剩杂物；
+// pending 凭证在 StatePath，不依赖 staging）。
+func TestApplyServeModeCleansStaging(t *testing.T) {
+	h := newHarness(t)
+	h.publishRelease(t, false, false, false)
+	h.updater.ServeMode = true
+	h.daemon.mu.Lock()
+	h.daemon.alive = true
+	h.daemon.mu.Unlock()
+
+	plan := h.check(t, SelectOpts{})
+	if err := h.updater.ApplyPlan(context.Background(), plan); err != nil {
+		t.Fatalf("ApplyPlan(ServeMode): %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(h.dir, StagingDirName)); !os.IsNotExist(err) {
+		t.Errorf("ServeMode pending 后 staging 应清理；stat err=%v", err)
+	}
+}
+
+// 中途失败（验签拒）→ staging 尽力清理（旧版未受影响 + 不留半包）。
+func TestApplyCleansStagingOnVerifyFailure(t *testing.T) {
+	h := newHarness(t)
+	h.publishRelease(t, true, false, false) // 篡改资产 → 验签拒
+
+	plan := h.check(t, SelectOpts{})
+	if err := h.updater.ApplyPlan(context.Background(), plan); err == nil {
+		t.Fatal("篡改资产应被拒")
+	}
+	if _, err := os.Stat(filepath.Join(h.dir, StagingDirName)); !os.IsNotExist(err) {
+		t.Errorf("失败路径 staging 应尽力清理；stat err=%v", err)
+	}
+}
+
+// 安装目录不可写 → ErrDirNotWritable 哨兵（v1.0.3 PR3 UAC 提权的判断依据）。
+// 构造：InstallDir 指向文件路径下的子路径 → MkdirAll ENOTDIR（跨平台稳定）。
+func TestApplyDirNotWritable(t *testing.T) {
+	h := newHarness(t)
+	h.publishRelease(t, false, false, false)
+	blocker := filepath.Join(h.dir, "notdir")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.updater.InstallDir = blocker
+
+	plan := h.check(t, SelectOpts{})
+	err := h.updater.ApplyPlan(context.Background(), plan)
+	if err == nil {
+		t.Fatal("InstallDir 为文件时应失败")
+	}
+	if !errors.Is(err, ErrDirNotWritable) {
+		t.Errorf("错误应 wrap ErrDirNotWritable（PR3 提权判断依据）；got: %v", err)
 	}
 }

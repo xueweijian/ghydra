@@ -217,3 +217,31 @@ func TestRecoverFromCrashStagingFailureNonBlocking(t *testing.T) {
 		t.Errorf("恢复后 exe 内容 = %q，期望 survivor-v1", got)
 	}
 }
+
+// v1.0.3 PR2：.bad 清扫失败不得阻断恢复链（与 staging 清扫同降级语义；
+// 提权残留 ACL 场景：.bad 删不掉但崩溃恢复（old 恢复正身）必须继续）。
+// 构造：.bad 造成非空目录 → os.Remove ENOTEMPTY 稳定失败（跨平台）。
+func TestRecoverFromCrashBadCleanupNonBlocking(t *testing.T) {
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "ghydra.exe.bad")
+	if err := os.MkdirAll(bad, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bad, "junk"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 崩溃现场：正身缺失 + old 在场 → 恢复动作必须照常执行
+	if err := os.WriteFile(filepath.Join(dir, "ghydra.exe.old"), []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	actions, err := RecoverFromCrash(dir, []string{"ghydra.exe"})
+	if err != nil {
+		t.Fatalf(".bad 清扫失败不应阻断恢复: %v", err)
+	}
+	if len(actions) == 0 || actions[0].Kind != OpRestoreOld {
+		t.Errorf("恢复动作应照常产出: %+v", actions)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "ghydra.exe")); string(got) != "old" {
+		t.Errorf("old 应已恢复正身；got %q", got)
+	}
+}

@@ -21,3 +21,10 @@ Windows/macOS 官方发布版已内置；源码构建加 gui 标签：
 `)
 	return 2
 }
+
+// noArgsDispatch —— 无参数行为按构建变体分流（v1.0.3 PR1）。
+// CLI 构建：usage + 2（语义不变，TestNoArgsWithoutGuiTagIsUsageError 锁定）。
+func noArgsDispatch() int {
+	usage()
+	return 2
+}

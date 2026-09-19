@@ -22,3 +22,12 @@ func TestGuiMainWithoutGuiTagGuides(t *testing.T) {
 		}
 	}
 }
+
+// v1.0.3 PR1：CLI 构建无参数仍是用法错误（usage+2）——gui 构建改直达
+// 面板后，本测试锁定 CLI 语义零变更。
+func TestNoArgsWithoutGuiTagIsUsageError(t *testing.T) {
+	code := noArgsDispatch()
+	if code != 2 {
+		t.Fatalf("无参数退出码 = %d, 要 2（CLI 构建维持 usage 语义）", code)
+	}
+}

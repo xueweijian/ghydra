@@ -306,7 +306,13 @@ func updateCmd(args []string) {
 	cdn := fs.String("cdn", "https://gh-proxy.com/", "B 通道镜像前缀（空 = A-only）")
 	apiBase := fs.String("api", "", "Releases API 覆盖（镜像/演练用；签名链不受影响）")
 	trustHost := fs.String("trust-host", "", "额外信任资产域（镜像/演练用；sha256+minisign 仍强制）")
-	_ = fs.Parse(reorderFlags(args, "pre", "allow-downgrade"))
+	// v1.0.3 PR3 内部旗标：UAC runas 交棒标记（提权重跑自身时携带，
+	// 防不可写异态下的无限弹窗——见 elevate.go）。
+	elevated := fs.Bool("elevated", false, "(内部) UAC 提权重跑标记")
+	_ = fs.Parse(reorderFlags(args, "pre", "allow-downgrade", "elevated"))
+	if *elevated {
+		os.Setenv(elevateEnvGuard, "1")
+	}
 
 	ensureReconcile(*dbPath)
 
@@ -342,6 +348,16 @@ func updateCmd(args []string) {
 		}
 		fmt.Println("已回滚到上一版（.old 凭证）")
 	default: // apply
+		// v1.0.3 PR3：安装目录不可写（Program Files 普通权限）→ UAC
+		// runas 交棒提权进程；拒绝/异态 → 人话指引退出。仅 apply 路径
+		// （check 是只读，不需要写权限）。
+		switch act, err := maybeElevateUpdate(); act {
+		case elevateRelaunched:
+			fmt.Println("安装目录需要管理员权限——已弹出 UAC 请求，请在弹出的窗口中确认以继续更新。")
+			return
+		case elevateFail:
+			log.Fatalf("更新中止: %v", err)
+		}
 		u, err := newSelfupdateUpdater(*dbPath, *cdn, *apiBase, trustHostMap(*trustHost))
 		if err != nil {
 			log.Fatalf("装配: %v", err)
