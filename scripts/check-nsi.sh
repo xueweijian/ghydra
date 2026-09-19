@@ -49,4 +49,18 @@ pass "安装创建桌面快捷方式"
 grep -q 'ReadRegStr \$0.*App Paths' "$NSI" || fail "App Paths 删除未条件化（双安装误删）"
 pass "App Paths 删除按归属条件化"
 
+# ── v1.0.3 rc 演练实证（第二轮）──────────────────────────────────
+# InstallDir 键必须有写入（InstallDirRegKey 依赖它决定重装默认目录；
+# 从未写入 → 静默/升级重装漂移到默认盘，双安装根源）
+# （-F 固定串：本环境 grep 为 ugrep，\$ 正则转义行为与 GNU 不同）
+grep -qF 'WriteRegStr HKLM "Software\${APPNAME}" "InstallDir"' "$NSI" || fail "InstallDir 键未写入（重装目录漂移）"
+pass "InstallDir 键写入（重装记住目录）"
+
+# 桌面 lnk 删除必须条件化（双安装共享路径：卸 A 不得删 B 的图标，真机实证）
+grep -q 'nsExec::ExecToStack' "$NSI" || fail "桌面 lnk 删除未条件化（双安装连坐误删）"
+if grep -qE '^\s*Delete "\$DESKTOP' "$NSI"; then
+  fail "桌面 lnk 仍有无条件 Delete"
+fi
+pass "桌面 lnk 删除按归属条件化"
+
 echo "=== NSIS 红线断言全绿 ==="

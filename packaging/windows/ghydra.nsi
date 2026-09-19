@@ -76,6 +76,11 @@ Section "Install"
     "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" \
     "NoRepair" 1
+
+  ; v1.0.3 rc 演练实证：InstallDirRegKey 读本键决定下次默认安装目录，
+  ; 但安装段从未写入 → 静默/升级重装永远漂移到默认 $PROGRAMFILES64
+  ; （F 盘用户升级出第二份安装的根源）。补写。
+  WriteRegStr HKLM "Software\${APPNAME}" "InstallDir" "$INSTDIR"
 SectionEnd
 
 Section "Uninstall"
@@ -96,9 +101,13 @@ Section "Uninstall"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   RMDir "$SMPROGRAMS\${APPNAME}"
-  ; 桌面 lnk 与安装时同上下文（current）删除
+  ; 桌面 lnk 条件删除：双安装共享同一路径，卸载一份不得连坐删掉另一份
+  ; 的图标（rc 演练实证：C 卸载删掉了 F 的桌面图标）。nsExec + 系统自带
+  ; WScript.Shell 读 lnk 目标做归属判断，无新插件依赖。
   SetShellVarContext current
-  Delete "$DESKTOP\${APPNAME}.lnk"
+  nsExec::ExecToStack `powershell -NoProfile -Command "$$p='$DESKTOP\${APPNAME}.lnk'; $$t='$INSTDIR\${EXE}'; if((Test-Path $$p) -and ((New-Object -ComObject WScript.Shell).CreateShortcut($$p).TargetPath -eq $$t)){Remove-Item -Force $$p}"`
+  Pop $0
+  Pop $0
 
   ; ── F1：PATH 精确移除自身条目（DeleteValue 只删精确匹配项，PATH 其余
   ; 内容绝不动；历史多条重复也一并清）+ App Paths 按归属条件删除 ──
