@@ -22,9 +22,9 @@ import (
 type elevateAction int
 
 const (
-	elevateProceed   elevateAction = iota // 目录可写，本进程直接执行
-	elevateRelaunched                     // 已弹 UAC 交棒提权进程，本进程静默退场
-	elevateFail                           // 不可继续（调用方以错误退出）
+	elevateProceed    elevateAction = iota // 目录可写，本进程直接执行
+	elevateRelaunched                      // 已弹 UAC 交棒提权进程，本进程静默退场
+	elevateFail                            // 不可继续（调用方以错误退出）
 )
 
 // elevateEnvGuard 提权交棒标记的环境侧名字（--elevated 旗标在 updateCmd
@@ -32,10 +32,10 @@ const (
 const elevateEnvGuard = "GHYDRA_ELEVATED"
 
 type elevateDeps struct {
-	self     string                                  // 自身 exe 路径（runas 目标）
-	writable func(dir string) bool                   // 安装目录可写探测
-	elevated func() bool                              // 提权护栏已置？
-	runas    func(exe, args string) error            // UAC 弹窗重跑（非 Windows 为 nil/报错实现）
+	self     string                       // 自身 exe 路径（runas 目标）
+	writable func(dir string) bool        // 安装目录可写探测
+	elevated func() bool                  // 提权护栏已置？
+	runas    func(exe, args string) error // UAC 弹窗重跑（非 Windows 为 nil/报错实现）
 }
 
 // decideElevate 决策表（TestElevateDecisionTable 锁定）。
