@@ -36,4 +36,17 @@ if grep -qE 'CurrentVersion\\Run' "$NSI"; then
 fi
 pass "安装器不预置开机自启（红线 4）"
 
+# ── v1.0.3：启动直达 + 双安装安全（真机实证三项）─────────────────
+# 快捷方式必须带 gui 参数——裸跑是 usage+exit 2（双击闪退，v1.0.2 真机）
+grep -q 'CreateShortcut.*\\${EXE}" "gui"' "$NSI" || fail "主快捷方式缺 gui 启动参数（双击闪退）"
+pass "快捷方式带 gui 参数（双击直达面板）"
+
+# 必须建桌面快捷方式（v1.0.2 装完桌面无图标，用户找不到入口）
+grep -q 'CreateShortcut "\$DESKTOP' "$NSI" || fail "缺桌面快捷方式"
+pass "安装创建桌面快捷方式"
+
+# App Paths 删除必须条件化（双安装场景：卸 A 不应删 B 的注册，真机实证）
+grep -q 'ReadRegStr \$0.*App Paths' "$NSI" || fail "App Paths 删除未条件化（双安装误删）"
+pass "App Paths 删除按归属条件化"
+
 echo "=== NSIS 红线断言全绿 ==="

@@ -72,8 +72,9 @@ func init() {
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+		// v1.0.3 PR1：gui 构建无参数直达面板（消灭双击闪退）；CLI
+		// 构建 usage+2（gui_off_test 锁定，语义不变）。
+		os.Exit(noArgsDispatch())
 	}
 	// 自更新启动钩子（子命令路由之前）：崩溃清扫 + pending 自检 +
 	// ×3 失败自动回滚（W4 设计 §2.3）。幂等，无状态时零开销。

@@ -21,6 +21,21 @@ import (
 // DefaultAPIBase Releases API 基址（repo 属主硬编码——U3 源替换防线之一）。
 const DefaultAPIBase = "https://api.github.com/repos/xueweijian/ghydra"
 
+// ErrDirNotWritable 安装目录不可写（Windows Program Files 普通权限等）。
+// 哨兵错误供 CLI/GUI 识别后引导提权（v1.0.3 PR3 UAC runas 重跑 update）。
+var ErrDirNotWritable = errors.New("selfupdate: 安装目录不可写（需要管理员权限）")
+
+// cleanupStaging 尽力清理 staging（成功/失败路径统一收尾）。清理失败只
+// 告警不阻断——staging 残留无害（下次 ApplyPlan 开头/BootHook 再试），
+// 而"因清理失败报错"会让用户以为更新本身坏了（v1.0.2 真机实证）。
+func cleanupStaging(dir string, logf func(string, ...any)) {
+	if err := os.RemoveAll(dir); err != nil {
+		if logf != nil {
+			logf("[selfupdate] staging 收尾清理跳过（残留无害，下次再试）: %v", err)
+		}
+	}
+}
+
 // DaemonControl daemon 重启编排的抽象（实现在 cmd 装配层：serve.json +
 // spawn + /api/status 探活；测试注入 fake）。
 type DaemonControl interface {
@@ -149,12 +164,21 @@ func (u *Updater) ApplyPlan(ctx context.Context, plan Plan) error {
 		}
 	}
 	staging := filepath.Join(u.InstallDir, StagingDirName)
+	// 开头清扫失败降级告警（脏文件由 PlanSwap 前置校验兜底：缺文件报
+	// ErrStagingIncomplete，多余旧文件不干扰 rename 序列）——v1.0.2
+	// 此处硬失败挡掉全部非提权更新。真正不可写（MkdirAll 也失败）才是
+	// 终局：哨兵 ErrDirNotWritable 供上层引导提权（PR3）。
 	if err := os.RemoveAll(staging); err != nil {
-		return fmt.Errorf("selfupdate: 清 staging: %w", err)
+		u.logf("[selfupdate] staging 开场清扫跳过（残留继续覆盖）: %v", err)
 	}
 	if err := os.MkdirAll(staging, 0o755); err != nil {
-		return fmt.Errorf("selfupdate: 建 staging: %w", err)
+		return fmt.Errorf("%w: 建 %s: %v", ErrDirNotWritable, staging, err)
 	}
+	// v1.0.3 PR2：全程收尾清理（成功/失败/回滚统一）——swap 的 rename
+	// 已把 Files 挪走，staging 只剩下载杂物；pending 凭证在 StatePath
+	// 不依赖 staging，ServeMode 分支清理同样安全（真机实证三件套永留
+	// 会与下次非提权清扫的 ACL 相撞，恶性循环）。
+	defer cleanupStaging(staging, u.logf)
 
 	// 1. checksums + minisig（小文件，直接 Downloader；sha256 稍后统一验）
 	phase("downloading")

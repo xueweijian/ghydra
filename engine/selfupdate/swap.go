@@ -123,8 +123,10 @@ func RecoverFromCrash(dir string, names []string) ([]Op, error) {
 	}
 	for _, name := range names {
 		bad := filepath.Join(dir, name+".bad")
+		// v1.0.3 PR2：与 staging 清扫同降级语义——.bad 删不掉（提权
+		// 残留 ACL 等）只告警，不得阻断崩溃恢复（old 恢复正身更要紧）。
 		if err := os.Remove(bad); err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("selfupdate: 清扫 %s: %w", bad, err)
+			log.Printf("[selfupdate] .bad 清扫跳过（残留无害）: %v", err)
 		}
 		if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
 			if _, errOld := os.Stat(filepath.Join(dir, name+".old")); errOld == nil {

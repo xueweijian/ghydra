@@ -228,8 +228,18 @@ func Run() {
 	trayMenu.Add("退出").OnClick(func(*application.Context) { app.Quit() })
 	tray.SetMenu(trayMenu)
 
-	// 托盘点击 = 窗口唤起/隐藏（v3 原生 attach 行为）
-	tray.AttachWindow(win).WindowOffset(8)
+	// v1.0.3 PR4：弃用 AttachWindow 默认 toggle（再点一次=隐藏——用户
+	// 「面板莫名消失/唤不回」的来源），改显式 OnClick：点击恒为唤起/置前，
+	// 隐藏只走关窗 X（Hide）与「隐藏面板」语义，行为可预期。
+	tray.OnClick(func() {
+		if win.IsVisible() {
+			win.Focus()
+			return
+		}
+		win.Show()
+		win.UnMinimise()
+		win.Focus()
+	})
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
